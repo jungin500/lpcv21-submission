@@ -199,7 +199,7 @@ def detect(opt, device, half, colorDict, save_img=False):
                     ball_detect, frame_catch_pairs, ball_person_pairs = solution.detect_catches(im0, bbox_xyxy, clses, mapped_id_list, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, save_img)
     
                     t3 = time_synchronized()
-                    if (save_img):
+                    if save_img or view_img:
                         main.draw_boxes(im0, bbox_xyxy, [names[i] for i in clses], scores, ball_detect, id_mapping, identities)
                 else:
                     t3 = time_synchronized()
@@ -213,7 +213,7 @@ def detect(opt, device, half, colorDict, save_img=False):
             
             # Stream results
             if view_img:
-                cv2.imshow(p, im0)
+                cv2.imshow(p, cv2.resize(im0, [1920, 1080]))
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
 
