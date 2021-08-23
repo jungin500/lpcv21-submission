@@ -420,7 +420,7 @@ def smooth_frame_pairs(frame_catch_pairs, colorDict):
             
                 tmp = ''
                 for j in range(len(color_ids)):
-                    mode = statistics.mode(color_ids[j])
+                    mode = statistics.multimode(color_ids[j])[0]
                     tmp = tmp + mode + ' '
             
                 i = nxt_i
