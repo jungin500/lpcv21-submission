@@ -1,7 +1,7 @@
 import os
 import platform
 from pathlib import Path
-from yolox.data.datasets.coco_classes import COCO_CLASSES
+# from yolox.data.datasets.coco_classes import COCO_CLASSES
 from yolox.predictor import Predictor
 from yolox.utils.model_utils import fuse_model
 from yolox.exps.base.build import get_exp
@@ -24,7 +24,12 @@ from deep_sort.deep_sort import DeepSort
 import time
 import yaml
 import solution
-import main 
+import main
+
+BALLPERSON_CLASSES = (
+    "person",
+    "sports ball"
+)
 
 def time_synchronized():
     # pytorch-accurate time
@@ -86,8 +91,8 @@ def detect(opt, device, half, colorDict, save_img=False):
     # imgsz = check_img_size(imgsz, s=stride)  # check img_size
 
     # Load model (YOLOX)
-    EXP_PATH = 'yolox/exps/default/nano.py'
-    CHECKPOINT_PATH = 'yolox/weights/yolox_nano.pth'
+    EXP_PATH = 'solution/yolox/exps/default/nano.py'
+    CHECKPOINT_PATH = 'solution/yolox/weights/yolox_nano.pth'
     
     exp = get_exp(EXP_PATH, None)
     # exp.test_conf = 0.25
@@ -105,7 +110,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     model.to(device)
 
     # Create predictor from model
-    predictor = Predictor(model, exp, COCO_CLASSES, None, 'gpu' if device.type == 'cuda' else 'cpu', False)
+    predictor = Predictor(model, exp, BALLPERSON_CLASSES, None, 'gpu' if device.type == 'cuda' else 'cpu', False)
 
     stride = 32
     imgsz = 640
@@ -156,8 +161,6 @@ def detect(opt, device, half, colorDict, save_img=False):
 
         # YOLOX postprocessing
         cls_conf = predictor.confthre
-        class_names = COCO_CLASSES
-
         ratio = img_info['ratio']
 
         # Process detections
