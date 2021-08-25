@@ -29,16 +29,11 @@ class Predictor(object):
 
     def inference(self, img):
         img_info = {"id": 0}
-        if isinstance(img, str):
-            img_info["file_name"] = os.path.basename(img)
-            img = cv2.imread(img)
-        else:
-            img_info["file_name"] = None
+        img_info["file_name"] = None
 
         height, width = img.shape[:2]
         img_info["height"] = height
         img_info["width"] = width
-        img_info["raw_img"] = img
 
         ratio = min(self.test_size[0] / img.shape[0], self.test_size[1] / img.shape[1])
         img_info["ratio"] = ratio
@@ -46,7 +41,7 @@ class Predictor(object):
         img, _ = self.preproc(img, None, self.test_size)
         img = torch.from_numpy(img).unsqueeze(0)
         if self.device == "gpu":
-            img = img.cuda()
+            img = img.cuda().half()
 
         with torch.no_grad():
             t0 = time.time()

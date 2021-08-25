@@ -11,11 +11,9 @@ import solution
 import track
 import time
 
-from yolov5.utils.general import check_img_size
-from yolov5.utils.torch_utils import select_device
+from yolox.utils.general import check_img_size, select_device
 
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
-
 
 
 def bbox_rel(image_width, image_height,  *xyxy):
@@ -31,16 +29,12 @@ def bbox_rel(image_width, image_height,  *xyxy):
     return x_c, y_c, w, h
 
 
-
-
 def compute_color_for_labels(label):
     """
     Simple function that adds fixed color depending on the class
     """
     color = [int((p * (label ** 2 - label + 1)) % 255) for p in palette]
     return tuple(color)
-
-
 
 
 def draw_boxes(img, bbox, cls_names, scores, ball_detect, id_mapping, identities=None, offset=(0,0)):
@@ -63,8 +57,6 @@ def draw_boxes(img, bbox, cls_names, scores, ball_detect, id_mapping, identities
         cv2.rectangle(img, (x1, y1),(x2,y2), color, 3)
         cv2.rectangle(img, (x1, y1), (x1 + t_size[0] + 3, y1 + t_size[1] + 4), color, -1)
         cv2.putText(img, label, (x1, y1 + t_size[1] + 4), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
-
-
 
 
 def default_parser():
@@ -90,8 +82,6 @@ def default_parser():
     return parser
 
 
-
-
 def main(vid_src=None, grd_src=None):
     '''
     Main function that will be ran when performing submission testing. 
@@ -103,7 +93,7 @@ def main(vid_src=None, grd_src=None):
     if vid_src == None and grd_src == None:
         vid_src = sys.argv[1]
         grd_src = sys.argv[2]
-    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs', '--skip-frames', '3'])
+    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs', '--skip-frames', '1'])
     args.img_size = check_img_size(args.img_size)
     groundtruths_path = args.groundtruths
     
@@ -122,8 +112,6 @@ def main(vid_src=None, grd_src=None):
 
     with torch.no_grad():
         track.detect(args, device, half, colorDict, save_img=False)
-
-
 
 
 if __name__ == '__main__':

@@ -5,7 +5,7 @@ import torch
 import csv
 import statistics
 from os import path
-from yolov5.utils.datasets import LoadImages
+from yolox.data.datasets.lpcvloader import LoadImages
 
 #Constants
 current_file_name = ''
@@ -499,7 +499,7 @@ def generateDynColorDict(groundtruths_path, clr_offs, args):
     static_colorDict = default_colorDict()
 
     print("\nAssigning Colors to IDs")
-    for _, _, im0, _ in dataset:
+    for _, im0, _ in dataset:
         img_h, img_w, _ = im0.shape
         groundtruths = load_labels(groundtruths_path, img_w, img_h, frame_num)
         if(groundtruths.shape[0] == 0):
@@ -533,7 +533,7 @@ def generateDynColorDict(groundtruths_path, clr_offs, args):
     frame_num = 0
     dataset.frame = frame_num
     print("\n\nAssigning Colors to Balls")
-    for _, _, im0, _ in dataset:
+    for _, im0, _ in dataset:
         img_h, img_w, _ = im0.shape
         groundtruths = load_labels(groundtruths_path, img_w, img_h, frame_num)
         if(groundtruths.shape[0] == 0):

@@ -17,18 +17,29 @@ import sys
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, dir_path+'/yolov5')
 
-from yolov5.models.experimental import attempt_load
-from yolov5.utils.datasets import LoadStreams, LoadImages
-from yolov5.utils.general import (
-    check_img_size, non_max_suppression, apply_classifier, scale_coords, xyxy2xywh)
-from yolov5.utils.torch_utils import load_classifier, time_synchronized
+from yolox.data.datasets.lpcvloader import LoadStreams, LoadImages
 from deep_sort.utils.parser import get_config
 from deep_sort.deep_sort import DeepSort
 
+import time
 import yaml
 import solution
 import main 
 
+def time_synchronized():
+    # pytorch-accurate time
+    if torch.cuda.is_available():
+        torch.cuda.synchronize()
+    return time.time()
+
+def xyxy2xywh(x):
+    # Convert nx4 boxes from [x1, y1, x2, y2] to [x, y, w, h] where xy1=top-left, xy2=bottom-right
+    y = x.clone() if isinstance(x, torch.Tensor) else np.copy(x)
+    y[:, 0] = (x[:, 0] + x[:, 2]) / 2  # x center
+    y[:, 1] = (x[:, 1] + x[:, 3]) / 2  # y center
+    y[:, 2] = x[:, 2] - x[:, 0]  # width
+    y[:, 3] = x[:, 3] - x[:, 1]  # height
+    return y
 
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
 
@@ -91,9 +102,10 @@ def detect(opt, device, half, colorDict, save_img=False):
 
     # Fuse model for optimized inference
     model = fuse_model(model)
+    model.to(device)
 
     # Create predictor from model
-    predictor = Predictor(model, exp, COCO_CLASSES, None,  "cpu", False)
+    predictor = Predictor(model, exp, COCO_CLASSES, None, 'gpu' if device.type == 'cuda' else 'cpu', False)
 
     stride = 32
     imgsz = 640
@@ -101,16 +113,9 @@ def detect(opt, device, half, colorDict, save_img=False):
     if half:
         model.half()  # to FP16
 
-    # Second-stage classifier
-    classify = False
-    if classify:
-        modelc = load_classifier(name='resnet101', n=2)  # initialize
-        modelc.load_state_dict(torch.load('weights/resnet101.pt', map_location=device)['model']).to(device).eval()
-
     # Set Dataloader
     vid_path, vid_writer = None, None
     if webcam:
-        view_img = check_imshow()
         cudnn.benchmark = True  # set True to speed up constant image size inference
         dataset = LoadStreams(source, img_size=imgsz, stride=stride)
     else:
@@ -135,7 +140,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     #Skip Variables
     skipThreshold = 0 #Current number of frames skipped
     
-    for path, img, im0s, vid_cap in dataset:
+    for path, im0s, vid_cap in dataset:
         if frame_num > 10 and skipThreshold < skipLimit:
             skipThreshold = skipThreshold + 1
             frame_num += 1
@@ -143,49 +148,18 @@ def detect(opt, device, half, colorDict, save_img=False):
         
         skipThreshold = 0
 
-        img = torch.from_numpy(img).to(device)
-        img = img.half() if half else img.float()  # uint8 to fp16/32
-        img /= 255.0  # 0 - 255 to 0.0 - 1.0
-        if img.ndimension() == 3:
-            img = img.unsqueeze(0)
-
         # Inference
         t1 = time_synchronized()
-        # pred = model(img, augment=opt.augment)[0]
-
-        # Apply NMS
-        # pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
-        # for x1, y1, x2, y2, conf, cls in pred[0]:
-        #     x1, y1, x2, y2 = x1.item(), y1.item(), x2.item(), y2.item()
-        #     x1, y1, x2, y2 = x1 / 640 * 1920, y1 / 384 * 1080, x2 / 640 * 1920, y2 / 384 * 1080
-        #     cv2.rectangle(im0s, (int(x1), int(y1)), (int(x2), int(y2)), colors[int(cls)], 2)
-        #     cv2.imshow("Another output", cv2.resize(im0s, (1280, 720)))
-        #     cv2.waitKey(1)
-        # print(pred)
-        '''
-        shape: torch.Size([N, 6])
-        body: [1.86125e+02, 1.81500e+02, 2.08125e+02, 2.47000e+02, 8.51562e-01, 0.00000e+00],
-        '''
 
         # Inference + NMS (YOLOX)
         pred, img_info = predictor.inference(im0s)
-        # print(pred.shape)
-        '''
-        shape: torch.Size([36, 7])
-        body: [8.4244e+00, 1.2001e+02, 1.3841e+02, 1.5904e+02, 2.0791e-02, 5.4499e-01, 2.0000e+00], ...
-        '''
 
         # YOLOX postprocessing
         cls_conf = predictor.confthre
         class_names = COCO_CLASSES
 
         ratio = img_info['ratio']
-        result_frame = img_info['raw_img']
 
-        # Apply Classifier
-        if classify:
-            pred = apply_classifier(pred, modelc, img, im0s)
-        
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
@@ -195,7 +169,7 @@ def detect(opt, device, half, colorDict, save_img=False):
 
             save_path = str(Path(out) / Path(p).name)
             txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
-            s += '%gx%g ' % img.shape[2:]  # print string
+            s += '384x640 '  # print string
             # gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
@@ -213,6 +187,9 @@ def detect(opt, device, half, colorDict, save_img=False):
                     x0, y0, x1, y1 = bboxes_all[bbox_id]
                     conf = conf_all[bbox_id]
                     cls = clses_all[bbox_id]
+
+                    if conf < cls_conf:
+                        continue
 
                     img_h, img_w, _ = im0.shape  # get image shape
                     x_c, y_c, bbox_w, bbox_h = main.bbox_rel(img_w, img_h, *[x0, y0, x1, y1])
