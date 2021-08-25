@@ -2,24 +2,22 @@ name: SampleSolution
 channels:
   - conda-forge
 dependencies:
-  - python=3.7
+  - python=3.9
   - pip
 
-  - matplotlib=3.4.3
-  - numpy=1.21.2
+  - matplotlib
+  - numpy
   - pillow>=8.1.2
-  - pyyaml=5.4.1
-  - scipy=1.7.1
+  - pyyaml
+  - scipy
   - tensorboard
-  - tqdm=4.62.1
+  - tqdm
 
-  - seaborn=0.11.2
-  - pandas=1.3.2
+  - seaborn
+  - pandas
   - easydict
-  
+
   - pip:
-    # - torch==1.8.0 -f https://download.pytorch.org/whl/torch_stable.html
-    # - torchvision==0.9.0 -f https://download.pytorch.org/whl/torch_stable.html
-    - torch-1.8.0a0-cp37-cp37m-linux_aarch64.whl
-    - torchvision-0.8.0a0+45f960c-cp37-cp37m-linux_aarch64.whl
+    - torch==1.8.0 -f https://download.pytorch.org/whl/torch_stable.html
+    - torchvision==0.9.1 -f https://download.pytorch.org/whl/torch_stable.html
     - opencv-contrib-python-headless>=4.1.2
