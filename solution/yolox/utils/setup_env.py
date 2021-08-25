@@ -4,7 +4,6 @@
 
 import os
 import subprocess
-from loguru import logger
 
 import cv2
 
@@ -38,7 +37,7 @@ def configure_omp(num_threads=1):
     if "OMP_NUM_THREADS" not in os.environ and get_world_size() > 1:
         os.environ["OMP_NUM_THREADS"] = str(num_threads)
         if is_main_process():
-            logger.info(
+            print(
                 "\n***************************************************************\n"
                 "We set `OMP_NUM_THREADS` for each process to {} to speed up.\n"
                 "please further tune the variable for optimal performance.\n"

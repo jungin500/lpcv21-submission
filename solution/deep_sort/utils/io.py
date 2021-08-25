@@ -51,7 +51,7 @@ def write_results(filename, results, data_type):
 #                 x2, y2 = x1 + w, y1 + h
 #                 line = save_format.format(frame=frame_id, id=track_id, x1=x1, y1=y1, x2=x2, y2=y2, w=w, h=h, score=1.0)
 #                 f.write(line)
-#     logger.info('Save results to {}'.format(filename))
+#     print('Save results to {}'.format(filename))
 
 
 def read_results(filename, data_type: str, is_gt=False, is_ignore=False):

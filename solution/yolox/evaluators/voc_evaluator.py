@@ -6,7 +6,6 @@ import sys
 import tempfile
 import time
 from collections import ChainMap
-from loguru import logger
 from tqdm import tqdm
 
 import numpy as np
@@ -157,7 +156,7 @@ class VOCEvaluator:
         if not is_main_process():
             return 0, 0, None
 
-        logger.info("Evaluate in main process...")
+        print("Evaluate in main process...")
 
         inference_time = statistics[0].item()
         nms_time = statistics[1].item()

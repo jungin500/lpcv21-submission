@@ -10,7 +10,6 @@ import os
 import os.path
 import pickle
 import xml.etree.ElementTree as ET
-from loguru import logger
 
 import cv2
 import numpy as np
@@ -140,7 +139,7 @@ class VOCDetection(Dataset):
         return [self.load_anno_from_ids(_ids) for _ids in range(len(self.ids))]
 
     def _cache_images(self):
-        logger.warning(
+        print(
             "\n********************************************************************************\n"
             "You are using cached images in RAM to accelerate training.\n"
             "This requires large system RAM.\n"
@@ -151,7 +150,7 @@ class VOCDetection(Dataset):
         max_w = self.img_size[1]
         cache_file = self.root + "/img_resized_cache_" + self.name + ".array"
         if not os.path.exists(cache_file):
-            logger.info(
+            print(
                 "Caching images for the frist time. This might take about 3 minutes for VOC"
             )
             self.imgs = np.memmap(
@@ -174,11 +173,11 @@ class VOCDetection(Dataset):
             self.imgs.flush()
             pbar.close()
         else:
-            logger.warning(
+            print(
                 "You are using cached imgs! Make sure your dataset is not changed!!"
             )
 
-        logger.info("Loading cached imgs...")
+        print("Loading cached imgs...")
         self.imgs = np.memmap(
             cache_file,
             shape=(len(self.ids), max_h, max_w, 3),

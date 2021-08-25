@@ -6,7 +6,6 @@ import ast
 import pprint
 from abc import ABCMeta, abstractmethod
 from typing import Dict
-from tabulate import tabulate
 
 import torch
 from torch.nn import Module
@@ -58,7 +57,7 @@ class BaseExp(metaclass=ABCMeta):
             for k, v in vars(self).items()
             if not k.startswith("_")
         ]
-        return tabulate(exp_table, headers=table_header, tablefmt="fancy_grid")
+        return str(exp_table)
 
     def merge(self, cfg_list):
         assert len(cfg_list) % 2 == 0

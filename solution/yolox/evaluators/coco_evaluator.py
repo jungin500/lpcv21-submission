@@ -8,7 +8,6 @@ import itertools
 import json
 import tempfile
 import time
-from loguru import logger
 from tqdm import tqdm
 
 import torch
@@ -168,7 +167,7 @@ class COCOEvaluator:
         if not is_main_process():
             return 0, 0, None
 
-        logger.info("Evaluate in main process...")
+        print("Evaluate in main process...")
 
         annType = ["segm", "bbox", "keypoints"]
 
@@ -205,9 +204,10 @@ class COCOEvaluator:
             try:
                 from yolox.layers import COCOeval_opt as COCOeval
             except ImportError:
-                from pycocotools.cocoeval import COCOeval
+                # from pycocotools.cocoeval import COCOeval
 
-                logger.warning("Use standard COCOeval.")
+                # print("Use standard COCOeval.")
+                print("COCOeval not available")
 
             cocoEval = COCOeval(cocoGt, cocoDt, annType[1])
             cocoEval.evaluate()

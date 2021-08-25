@@ -3,7 +3,6 @@
 # Copyright (c) 2014-2021 Megvii Inc. All rights reserved.
 
 import math
-from loguru import logger
 
 import torch
 import torch.nn as nn
@@ -327,7 +326,7 @@ class YOLOXHead(nn.Module):
                         imgs,
                     )
                 except RuntimeError:
-                    logger.error(
+                    print(
                         "OOM RuntimeError is raised due to the huge memory cost during label assignment. \
                            CPU mode is applied in this batch. If you want to avoid this issue, \
                            try to reduce the batch size or image size."
