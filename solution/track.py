@@ -1,6 +1,10 @@
 import os
 import platform
 from pathlib import Path
+from yolox.data.datasets.coco_classes import COCO_CLASSES
+from yolox.predictor import Predictor
+from yolox.utils.model_utils import fuse_model
+from yolox.exps.base.build import get_exp
 
 import cv2
 import torch
@@ -65,10 +69,35 @@ def detect(opt, device, half, colorDict, save_img=False):
     if not os.path.exists(out):
         os.makedirs(out)  # make new output folder
 
-    # Load model
-    model = attempt_load(weights, map_location=device)  # load FP32 model
-    stride = int(model.stride.max())  # model stride
-    imgsz = check_img_size(imgsz, s=stride)  # check img_size
+    # Load model (YOLOv5)
+    # model = attempt_load(weights, map_location=device)  # load FP32 model
+    # stride = int(model.stride.max())  # model stride
+    # imgsz = check_img_size(imgsz, s=stride)  # check img_size
+
+    # Load model (YOLOX)
+    EXP_PATH = 'yolox/exps/default/nano.py'
+    CHECKPOINT_PATH = 'yolox/weights/yolox_nano.pth'
+    
+    exp = get_exp(EXP_PATH, None)
+    # exp.test_conf = 0.25
+    # exp.nmsthre = 0.75
+    # exp.test_size = (416, 416)
+    model = exp.get_model()
+    model.eval()
+    
+    # Load weight from checkpoint
+    ckpt = torch.load(CHECKPOINT_PATH, map_location=device)
+    model.load_state_dict(ckpt['model'])
+
+    # Fuse model for optimized inference
+    model = fuse_model(model)
+
+    # Create predictor from model
+    predictor = Predictor(model, exp, COCO_CLASSES, None,  "cpu", False)
+
+    stride = 32
+    imgsz = 640
+
     if half:
         model.half()  # to FP16
 
@@ -88,9 +117,16 @@ def detect(opt, device, half, colorDict, save_img=False):
         dataset = LoadImages(source, img_size=imgsz, stride=stride)
 
     # Get names and colors
-    names = model.module.names if hasattr(model, 'module') else model.names
-    colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(names))]
-
+    # names = model.module.names if hasattr(model, 'module') else model.names
+    # colors = [[random.randint(0, 255) for _ in range(3)] for _ in range(len(names))]
+    # print(names)
+    # print(colors)
+    '''
+        ['person', 'sports ball']
+        [[203, 20, 169], [136, 240, 229]]
+    '''
+    names = ['person', 'sports ball']
+    colors = [[203, 20, 169], [136, 240, 229]]
 
     # Run inference
     if device.type != 'cpu':
@@ -115,16 +151,41 @@ def detect(opt, device, half, colorDict, save_img=False):
 
         # Inference
         t1 = time_synchronized()
-        pred = model(img, augment=opt.augment)[0]
+        # pred = model(img, augment=opt.augment)[0]
 
         # Apply NMS
-        pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        # pred = non_max_suppression(pred, opt.conf_thres, opt.iou_thres, classes=opt.classes, agnostic=opt.agnostic_nms)
+        # for x1, y1, x2, y2, conf, cls in pred[0]:
+        #     x1, y1, x2, y2 = x1.item(), y1.item(), x2.item(), y2.item()
+        #     x1, y1, x2, y2 = x1 / 640 * 1920, y1 / 384 * 1080, x2 / 640 * 1920, y2 / 384 * 1080
+        #     cv2.rectangle(im0s, (int(x1), int(y1)), (int(x2), int(y2)), colors[int(cls)], 2)
+        #     cv2.imshow("Another output", cv2.resize(im0s, (1280, 720)))
+        #     cv2.waitKey(1)
+        # print(pred)
+        '''
+        shape: torch.Size([N, 6])
+        body: [1.86125e+02, 1.81500e+02, 2.08125e+02, 2.47000e+02, 8.51562e-01, 0.00000e+00],
+        '''
+
+        # Inference + NMS (YOLOX)
+        pred, img_info = predictor.inference(im0s)
+        # print(pred.shape)
+        '''
+        shape: torch.Size([36, 7])
+        body: [8.4244e+00, 1.2001e+02, 1.3841e+02, 1.5904e+02, 2.0791e-02, 5.4499e-01, 2.0000e+00], ...
+        '''
+
+        # YOLOX postprocessing
+        cls_conf = predictor.confthre
+        class_names = COCO_CLASSES
+
+        ratio = img_info['ratio']
+        result_frame = img_info['raw_img']
 
         # Apply Classifier
         if classify:
             pred = apply_classifier(pred, modelc, img, im0s)
-
-
+        
         # Process detections
         for i, det in enumerate(pred):  # detections per image
             if webcam:  # batch_size >= 1
@@ -135,20 +196,28 @@ def detect(opt, device, half, colorDict, save_img=False):
             save_path = str(Path(out) / Path(p).name)
             txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
             s += '%gx%g ' % img.shape[2:]  # print string
-            gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
+            # gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
             if det is not None and len(det):
                 # Rescale boxes from img_size to im0 size
-                det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
+                # det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
                 bbox_xywh = []
                 confs = []
                 clses = []
 
+                bboxes_all = det[:, :4] / ratio
+                conf_all = det[:, 4:5] * det[:, 5:6]
+                clses_all = det[:, 6:7]
+
                 # Write results
-                for *xyxy, conf, cls in det:
-                    
+                for bbox_id in range(bboxes_all.shape[0]):
+                    x0, y0, x1, y1 = bboxes_all[bbox_id]
+                    conf = conf_all[bbox_id]
+                    cls = clses_all[bbox_id]
+
                     img_h, img_w, _ = im0.shape  # get image shape
-                    x_c, y_c, bbox_w, bbox_h = main.bbox_rel(img_w, img_h, *xyxy)
+                    x_c, y_c, bbox_w, bbox_h = main.bbox_rel(img_w, img_h, *[x0, y0, x1, y1])
                     obj = [x_c, y_c, bbox_w, bbox_h]
+
                     bbox_xywh.append(obj)
                     confs.append([conf.item()])
                     clses.append([cls.item()])
@@ -200,7 +269,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     
                     t3 = time_synchronized()
                     if save_img or view_img:
-                        main.draw_boxes(im0, bbox_xyxy, [names[i] for i in clses], scores, ball_detect, id_mapping, identities)
+                        main.draw_boxes(im0, bbox_xyxy, [names[i] if i < len(names) else 'Unknown' for i in clses], scores, ball_detect, id_mapping, identities)
                 else:
                     t3 = time_synchronized()
 
