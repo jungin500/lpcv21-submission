@@ -499,7 +499,8 @@ def generateDynColorDict(groundtruths_path, clr_offs, args):
     static_colorDict = default_colorDict()
 
     print("\nAssigning Colors to IDs")
-    for _, im0, _ in dataset:
+    for _, im0s, _ in dataset:
+        im0 = im0s[0]
         img_h, img_w, _ = im0.shape
         groundtruths = load_labels(groundtruths_path, img_w, img_h, frame_num)
         if(groundtruths.shape[0] == 0):
@@ -533,7 +534,8 @@ def generateDynColorDict(groundtruths_path, clr_offs, args):
     frame_num = 0
     dataset.frame = frame_num
     print("\n\nAssigning Colors to Balls")
-    for _, im0, _ in dataset:
+    for _, im0s, _ in dataset:
+        im0 = im0s[0]
         img_h, img_w, _ = im0.shape
         groundtruths = load_labels(groundtruths_path, img_w, img_h, frame_num)
         if(groundtruths.shape[0] == 0):

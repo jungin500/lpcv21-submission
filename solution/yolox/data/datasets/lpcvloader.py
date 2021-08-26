@@ -130,7 +130,7 @@ class _RepeatSampler(object):
 
 
 class LoadImages:  # for inference
-    def __init__(self, path, img_size=640, stride=32):
+    def __init__(self, path, img_size=640, batch_size=1, stride=32):
         p = str(Path(path).absolute())  # os-agnostic absolute path
         if '*' in p:
             files = sorted(glob.glob(p, recursive=True))  # glob
@@ -145,6 +145,7 @@ class LoadImages:  # for inference
         videos = [x for x in files if x.split('.')[-1].lower() in vid_formats]
         ni, nv = len(images), len(videos)
 
+        self.batch_size = batch_size
         self.img_size = img_size
         self.stride = stride
         self.files = images + videos
@@ -170,18 +171,22 @@ class LoadImages:  # for inference
         if self.video_flag[self.count]:
             # Read video
             self.mode = 'video'
-            ret_val, img0 = self.cap.read()
-            if not ret_val:
-                self.count += 1
-                self.cap.release()
-                if self.count == self.nf:  # last video
-                    raise StopIteration
-                else:
-                    path = self.files[self.count]
-                    self.new_video(path)
-                    ret_val, img0 = self.cap.read()
+            img0s = []
+            for _ in range(self.batch_size):
+                ret_val, img0 = self.cap.read()
+                img0s.append(img0)
+                if not ret_val:
+                    self.count += 1
+                    self.cap.release()
+                    if self.count == self.nf:  # last video
+                        raise StopIteration
+                    else:
+                        path = self.files[self.count]
+                        self.new_video(path)
+                        ret_val, img0 = self.cap.read()
+                        break
 
-            self.frame += 1
+            self.frame += self.batch_size
             print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='')
 
         else:
@@ -191,7 +196,7 @@ class LoadImages:  # for inference
             assert img0 is not None, 'Image Not Found ' + path
             print(f'image {self.count}/{self.nf} {path}: ', end='')
 
-        return path, img0, self.cap
+        return path, img0s, self.cap
 
     def new_video(self, path):
         self.frame = 0

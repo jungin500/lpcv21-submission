@@ -88,6 +88,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     # Load model (YOLOX)
     EXP_PATH = 'solution/yolox/exps/custom/model_yj.py'
     CHECKPOINT_PATH = 'solution/yolox/weights/best_ckpt.pth'
+    BATCH_SIZE=2
 
     exp = get_exp(EXP_PATH, None)
     # exp.test_conf = 0.25
@@ -119,11 +120,7 @@ def detect(opt, device, half, colorDict, save_img=False):
 
     # Set Dataloader
     vid_path, vid_writer = None, None
-    if webcam:
-        cudnn.benchmark = True  # set True to speed up constant image size inference
-        dataset = LoadStreams(source, img_size=imgsz, stride=stride)
-    else:
-        dataset = LoadImages(source, img_size=imgsz, stride=stride)
+    dataset = LoadImages(source, img_size=imgsz, batch_size=BATCH_SIZE, stride=stride)
 
     # Get names and colors
     # names = model.module.names if hasattr(model, 'module') else model.names
@@ -144,7 +141,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     #Skip Variables
     skipThreshold = 0 #Current number of frames skipped
     
-    for path, im0s, vid_cap in dataset:
+    for path, im0sb, vid_cap in dataset:
         if frame_num > 10 and skipThreshold < skipLimit:
             skipThreshold = skipThreshold + 1
             frame_num += 1
@@ -156,101 +153,96 @@ def detect(opt, device, half, colorDict, save_img=False):
         t1 = time_synchronized()
 
         # Inference + NMS (YOLOX)
-        pred, img_info = predictor.inference(im0s)
+        preds, img_infos = predictor.inference_batched(im0sb)
 
         # YOLOX postprocessing
-        cls_conf = predictor.confthre
-        ratio = img_info['ratio']
+        for b in range(BATCH_SIZE):
+            det = preds[b]
+            img_info = img_infos[b]
+            im0s = im0sb[b]
 
-        # Process detections
-        for i, det in enumerate(pred):  # detections per image
-            if webcam:  # batch_size >= 1
-                p, s, im0 = path[i], '%g: ' % i, im0s[i].copy()
+            cls_conf = predictor.confthre
+            ratio = img_info['ratio']
+
+            # Process detections
+            save_path = str(Path(out) / Path(path).name)
+            txt_path = str(Path(out) / Path(path).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
+
+            bbox_xywh = []
+            confs = []
+            clses = []
+
+            bboxes_all = det[:, :4] / ratio
+            conf_all = det[:, 4:5] * det[:, 5:6]
+            clses_all = det[:, 6:7]
+
+            # Write results
+            for bbox_id in range(bboxes_all.shape[0]):
+                x0, y0, x1, y1 = bboxes_all[bbox_id]
+                conf = conf_all[bbox_id]
+                cls = clses_all[bbox_id]
+
+                if conf < cls_conf:
+                    continue
+
+                img_h, img_w, _ = im0s.shape  # get image shape
+                x_c, y_c, bbox_w, bbox_h = main.bbox_rel(img_w, img_h, *[x0, y0, x1, y1])
+                obj = [x_c, y_c, bbox_w, bbox_h]
+
+                bbox_xywh.append(obj)
+                confs.append([conf.item()])
+                clses.append([cls.item()])
+                
+            xywhs = torch.Tensor(bbox_xywh)
+            confss = torch.Tensor(confs)
+            clses = torch.Tensor(clses)
+            # Pass detections to deepsort
+            outputs = []
+            if not 'disable' in groundtruths_path:
+                # print('\nenabled', groundtruths_path)
+                groundtruths = solution.load_labels(groundtruths_path, img_w,img_h, frame_num)
+                if (groundtruths.shape[0]==0):
+                    outputs = deepsort.update(xywhs, confss, clses, im0s)
+                else:
+                    # print(groundtruths)
+                    xywhs = groundtruths[:,2:]
+                    tensor = torch.tensor((), dtype=torch.int32)
+                    confss = tensor.new_ones((groundtruths.shape[0], 1))
+                    clses = groundtruths[:,0:1]
+                    outputs = deepsort.update(xywhs, confss, clses, im0s)
+                
+                
+                if frame_num >= 2:
+                    for real_ID in groundtruths[:,1:].tolist():
+                        for DS_ID in xyxy2xywh(outputs[:, :5]):
+                            if (abs(DS_ID[0]-real_ID[1])/img_w < 0.005) and (abs(DS_ID[1]-real_ID[2])/img_h < 0.005) and (abs(DS_ID[2]-real_ID[3])/img_w < 0.005) and(abs(DS_ID[3]-real_ID[4])/img_w < 0.005):
+                                id_mapping[DS_ID[4]] = int(real_ID[0])
             else:
-                p, s, im0 = path, '', im0s
+                outputs = deepsort.update(xywhs, confss, clses, im0s)
 
-            save_path = str(Path(out) / Path(p).name)
-            txt_path = str(Path(out) / Path(p).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
-            s += '384x640 '  # print string
-            # gn = torch.tensor(im0.shape)[[1, 0, 1, 0]]  # normalization gain whwh
-            if det is not None and len(det):
-                # Rescale boxes from img_size to im0 size
-                # det[:, :4] = scale_coords(img.shape[2:], det[:, :4], im0.shape).round()
-                bbox_xywh = []
-                confs = []
-                clses = []
 
-                bboxes_all = det[:, :4] / ratio
-                conf_all = det[:, 4:5] * det[:, 5:6]
-                clses_all = det[:, 6:7]
-
-                # Write results
-                for bbox_id in range(bboxes_all.shape[0]):
-                    x0, y0, x1, y1 = bboxes_all[bbox_id]
-                    conf = conf_all[bbox_id]
-                    cls = clses_all[bbox_id]
-
-                    if conf < cls_conf:
-                        continue
-
-                    img_h, img_w, _ = im0.shape  # get image shape
-                    x_c, y_c, bbox_w, bbox_h = main.bbox_rel(img_w, img_h, *[x0, y0, x1, y1])
-                    obj = [x_c, y_c, bbox_w, bbox_h]
-
-                    bbox_xywh.append(obj)
-                    confs.append([conf.item()])
-                    clses.append([cls.item()])
-                    
-                xywhs = torch.Tensor(bbox_xywh)
-                confss = torch.Tensor(confs)
-                clses = torch.Tensor(clses)
-                # Pass detections to deepsort
-                outputs = []
-                if not 'disable' in groundtruths_path:
-                    # print('\nenabled', groundtruths_path)
-                    groundtruths = solution.load_labels(groundtruths_path, img_w,img_h, frame_num)
-                    if (groundtruths.shape[0]==0):
-                        outputs = deepsort.update(xywhs, confss, clses, im0)
+            # draw boxes for visualization
+            if len(outputs) > 0:
+                bbox_xyxy = outputs[:, :4]
+                identities = outputs[:, 4]
+                clses = outputs[:, 5]
+                scores = outputs[:, 6]
+                
+                #Temp solution to get correct id's 
+                mapped_id_list = []
+                for ids in identities:
+                    if(ids in id_mapping):
+                        mapped_id_list.append(int(id_mapping[ids]))
                     else:
-                        # print(groundtruths)
-                        xywhs = groundtruths[:,2:]
-                        tensor = torch.tensor((), dtype=torch.int32)
-                        confss = tensor.new_ones((groundtruths.shape[0], 1))
-                        clses = groundtruths[:,0:1]
-                        outputs = deepsort.update(xywhs, confss, clses, im0)
-                    
-                    
-                    if frame_num >= 2:
-                        for real_ID in groundtruths[:,1:].tolist():
-                            for DS_ID in xyxy2xywh(outputs[:, :5]):
-                                if (abs(DS_ID[0]-real_ID[1])/img_w < 0.005) and (abs(DS_ID[1]-real_ID[2])/img_h < 0.005) and (abs(DS_ID[2]-real_ID[3])/img_w < 0.005) and(abs(DS_ID[3]-real_ID[4])/img_w < 0.005):
-                                    id_mapping[DS_ID[4]] = int(real_ID[0])
-                else:
-                    outputs = deepsort.update(xywhs, confss, clses, im0)
+                        mapped_id_list.append(ids)
 
+                ball_detect, frame_catch_pairs, ball_person_pairs = solution.detect_catches(im0s, bbox_xyxy, clses, mapped_id_list, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, save_img)
 
-                # draw boxes for visualization
-                if len(outputs) > 0:
-                    bbox_xyxy = outputs[:, :4]
-                    identities = outputs[:, 4]
-                    clses = outputs[:, 5]
-                    scores = outputs[:, 6]
-                    
-                    #Temp solution to get correct id's 
-                    mapped_id_list = []
-                    for ids in identities:
-                        if(ids in id_mapping):
-                            mapped_id_list.append(int(id_mapping[ids]))
-                        else:
-                            mapped_id_list.append(ids)
-
-                    ball_detect, frame_catch_pairs, ball_person_pairs = solution.detect_catches(im0, bbox_xyxy, clses, mapped_id_list, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, save_img)
-    
-                    t3 = time_synchronized()
-                    if save_img or view_img:
-                        main.draw_boxes(im0, bbox_xyxy, [names[i] if i < len(names) else 'Unknown' for i in clses], scores, ball_detect, id_mapping, identities)
-                else:
-                    t3 = time_synchronized()
+                t3 = time_synchronized()
+                if save_img or view_img:
+                    main.draw_boxes(im0s, bbox_xyxy, [names[i] if i < len(names) else 'Unknown' for i in clses], scores, ball_detect, id_mapping, identities)
+            else:
+                t3 = time_synchronized()
 
 
             #Inference Time
@@ -261,19 +253,19 @@ def detect(opt, device, half, colorDict, save_img=False):
             
             # Stream results
             if view_img:
-                cv2.imshow(p, cv2.resize(im0, [1920, 1080]))
+                cv2.imshow(path, cv2.resize(im0s, [1920, 1080]))
                 if cv2.waitKey(1) == ord('q'):  # q to quit
                     raise StopIteration
 
             # Save results (image with detections)
             if save_img:
                 if dataset.mode == 'images':
-                    cv2.imwrite(save_path, im0)
+                    cv2.imwrite(save_path, im0s)
                 else:
                     #Draw frame number
                     tmp = framestr.format(frame = frame_num)
                     t_size = cv2.getTextSize(tmp, cv2.FONT_HERSHEY_PLAIN, 2 , 2)[0]
-                    cv2.putText(im0, tmp, (0, (t_size[1] + 10)), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
+                    cv2.putText(im0s, tmp, (0, (t_size[1] + 10)), cv2.FONT_HERSHEY_PLAIN, 2, [255, 255, 255], 2)
 
                     if vid_path != save_path:  # new video
                         vid_path = save_path
@@ -284,7 +276,7 @@ def detect(opt, device, half, colorDict, save_img=False):
                         w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), fps, (w, h))
-                    vid_writer.write(im0)
+                    vid_writer.write(im0s)
             frame_num += 1
                     
         
