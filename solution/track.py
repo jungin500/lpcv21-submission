@@ -259,6 +259,8 @@ def detect(opt, device, half, colorDict, save_img=False):
                         h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), fps, (w, h))
                     vid_writer.write(im0s)
+            if frame_num > 10:
+                frame_num += skipLimit
             frame_num += 1
         
         t3 = time_synchronized()

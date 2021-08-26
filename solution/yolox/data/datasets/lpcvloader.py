@@ -212,7 +212,9 @@ class LoadImages:  # for inference
             img0s = []
             for _ in range(self.batch_size):
                 # Skip n frame from VideoCapture
-                [self.cap.read() for _ in range(self.skip_frames)]
+                # but do not skip first 10 frame
+                if self.frame > 10:
+                    [self.cap.read() for _ in range(self.skip_frames)]
 
                 # Read frame
                 ret_val, img0 = self.cap.read()
@@ -227,8 +229,10 @@ class LoadImages:  # for inference
                         self.new_video(path)
                         ret_val, img0 = self.cap.read()
                         break
-
-            self.frame += self.batch_size * (self.skip_frames + 1)
+            
+            if self.frame > 10:
+                self.frame += self.batch_size * self.skip_frames
+            self.frame += self.batch_size
             print(f'video {self.count + 1}/{self.nf} ({self.frame}/{self.nframes}) {path}: ', end='')
 
         else:
@@ -251,7 +255,7 @@ class LoadImages:  # for inference
         self.nframes = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     def __len__(self):
-        return self.nf // (self.skip_frames + 1)  # number of files
+        return self.nf  # number of files
 
 
 def img2label_paths(img_paths):
