@@ -130,7 +130,7 @@ class _RepeatSampler(object):
 
 
 class LoadImages:  # for inference
-    def __init__(self, path, img_size=640, batch_size=1, stride=32):
+    def __init__(self, path, img_size=640, batch_size=1, stride=32, skip_frames=0):
         p = str(Path(path).absolute())  # os-agnostic absolute path
         if '*' in p:
             files = sorted(glob.glob(p, recursive=True))  # glob
@@ -145,6 +145,7 @@ class LoadImages:  # for inference
         videos = [x for x in files if x.split('.')[-1].lower() in vid_formats]
         ni, nv = len(images), len(videos)
 
+        self.skip_frames = skip_frames
         self.batch_size = batch_size
         self.img_size = img_size
         self.stride = stride
@@ -173,6 +174,10 @@ class LoadImages:  # for inference
             self.mode = 'video'
             img0s = []
             for _ in range(self.batch_size):
+                # Skip n frame from VideoCapture
+                [self.cap.read() for _ in range(self.skip_frames)]
+
+                # Read frame
                 ret_val, img0 = self.cap.read()
                 img0s.append(img0)
                 if not ret_val:
@@ -196,6 +201,8 @@ class LoadImages:  # for inference
             assert img0 is not None, 'Image Not Found ' + path
             print(f'image {self.count}/{self.nf} {path}: ', end='')
 
+            img0s = [img0]
+
         return path, img0s, self.cap
 
     def new_video(self, path):
@@ -204,7 +211,7 @@ class LoadImages:  # for inference
         self.nframes = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
 
     def __len__(self):
-        return self.nf  # number of files
+        return self.nf // (self.skip_frames + 1)  # number of files
 
 
 class LoadWebcam:  # for inference
