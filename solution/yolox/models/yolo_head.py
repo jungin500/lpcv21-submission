@@ -56,13 +56,13 @@ class YOLOXHead(nn.Module):
             self.cls_convs.append(
                 nn.Sequential(
                     *[
-                        Conv(
-                            in_channels=int(256 * width),
-                            out_channels=int(256 * width),
-                            ksize=3,
-                            stride=1,
-                            act=act,
-                        ),
+                        # Conv(
+                        #     in_channels=int(256 * width),
+                        #     out_channels=int(256 * width),
+                        #     ksize=3,
+                        #     stride=1,
+                        #     act=act,
+                        # ),
                         Conv(
                             in_channels=int(256 * width),
                             out_channels=int(256 * width),
@@ -76,13 +76,13 @@ class YOLOXHead(nn.Module):
             self.reg_convs.append(
                 nn.Sequential(
                     *[
-                        Conv(
-                            in_channels=int(256 * width),
-                            out_channels=int(256 * width),
-                            ksize=3,
-                            stride=1,
-                            act=act,
-                        ),
+                        # Conv(
+                        #     in_channels=int(256 * width),
+                        #     out_channels=int(256 * width),
+                        #     ksize=3,
+                        #     stride=1,
+                        #     act=act,
+                        # ),
                         Conv(
                             in_channels=int(256 * width),
                             out_channels=int(256 * width),

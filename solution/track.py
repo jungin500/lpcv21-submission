@@ -85,15 +85,10 @@ def detect(opt, device, half, colorDict, save_img=False):
     if not os.path.exists(out):
         os.makedirs(out)  # make new output folder
 
-    # Load model (YOLOv5)
-    # model = attempt_load(weights, map_location=device)  # load FP32 model
-    # stride = int(model.stride.max())  # model stride
-    # imgsz = check_img_size(imgsz, s=stride)  # check img_size
-
     # Load model (YOLOX)
-    EXP_PATH = 'solution/yolox/exps/default/nano.py'
-    CHECKPOINT_PATH = 'solution/yolox/weights/yolox_nano.pth'
-    
+    EXP_PATH = 'solution/yolox/exps/custom/model_yj.py'
+    CHECKPOINT_PATH = 'solution/yolox/weights/best_ckpt.pth'
+
     exp = get_exp(EXP_PATH, None)
     # exp.test_conf = 0.25
     # exp.nmsthre = 0.75
@@ -106,17 +101,21 @@ def detect(opt, device, half, colorDict, save_img=False):
     model.load_state_dict(ckpt['model'])
 
     # Fuse model for optimized inference
-    model = fuse_model(model)
+    # model = fuse_model(model)
     model.to(device)
 
+    model = fuse_model(model)
+
+    # torch.backends.quantized.engine = 'qnnpack'
+    # model.qconfig = torch.quantization.get_default_qconfig('qnnpack')
+    # model_p = torch.quantization.prepare(model)
+    # model = torch.quantization.convert(model_p)
+    
     # Create predictor from model
     predictor = Predictor(model, exp, BALLPERSON_CLASSES, None, 'gpu' if device.type == 'cuda' else 'cpu', False)
 
     stride = 32
     imgsz = 640
-
-    if half:
-        model.half()  # to FP16
 
     # Set Dataloader
     vid_path, vid_writer = None, None
