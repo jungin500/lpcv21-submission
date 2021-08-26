@@ -88,7 +88,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     # Load model (YOLOX)
     EXP_PATH = 'solution/yolox/exps/custom/model_yj.py'
     CHECKPOINT_PATH = 'solution/yolox/weights/best_ckpt.pth'
-    BATCH_SIZE=2
+    BATCH_SIZE=16
 
     exp = get_exp(EXP_PATH, None)
     # exp.test_conf = 0.25
@@ -120,7 +120,7 @@ def detect(opt, device, half, colorDict, save_img=False):
 
     # Set Dataloader
     vid_path, vid_writer = None, None
-    dataset = LoadImages(source, img_size=imgsz, batch_size=BATCH_SIZE, stride=stride)
+    dataset = LoadImages(source, img_size=imgsz, batch_size=BATCH_SIZE, skip_frames=skipLimit, stride=stride)
 
     # Get names and colors
     # names = model.module.names if hasattr(model, 'module') else model.names
@@ -138,22 +138,14 @@ def detect(opt, device, half, colorDict, save_img=False):
     if device.type != 'cpu':
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
 
-    #Skip Variables
-    skipThreshold = 0 #Current number of frames skipped
-    
     for path, im0sb, vid_cap in dataset:
-        if frame_num > 10 and skipThreshold < skipLimit:
-            skipThreshold = skipThreshold + 1
-            frame_num += 1
-            continue
-        
-        skipThreshold = 0
-
         # Inference
         t1 = time_synchronized()
 
         # Inference + NMS (YOLOX)
         preds, img_infos = predictor.inference_batched(im0sb)
+
+        batch_fpses = []
 
         # YOLOX postprocessing
         for b in range(BATCH_SIZE):
@@ -182,16 +174,14 @@ def detect(opt, device, half, colorDict, save_img=False):
                 conf = conf_all[bbox_id]
                 cls = clses_all[bbox_id]
 
-                if conf < cls_conf:
-                    continue
+                if conf >= cls_conf:
+                    img_h, img_w, _ = im0s.shape  # get image shape
+                    x_c, y_c, bbox_w, bbox_h = main.bbox_rel(img_w, img_h, *[x0, y0, x1, y1])
+                    obj = [x_c, y_c, bbox_w, bbox_h]
 
-                img_h, img_w, _ = im0s.shape  # get image shape
-                x_c, y_c, bbox_w, bbox_h = main.bbox_rel(img_w, img_h, *[x0, y0, x1, y1])
-                obj = [x_c, y_c, bbox_w, bbox_h]
-
-                bbox_xywh.append(obj)
-                confs.append([conf.item()])
-                clses.append([cls.item()])
+                    bbox_xywh.append(obj)
+                    confs.append([conf.item()])
+                    clses.append([cls.item()])
                 
             xywhs = torch.Tensor(bbox_xywh)
             confss = torch.Tensor(confs)
@@ -248,8 +238,7 @@ def detect(opt, device, half, colorDict, save_img=False):
             #Inference Time
             fps = (1/(t3 - t1))
             fpses.append(fps)
-            print('FPS=%.2f' % fps)
-            
+            batch_fpses.append(fps)
             
             # Stream results
             if view_img:
@@ -278,6 +267,8 @@ def detect(opt, device, half, colorDict, save_img=False):
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), fps, (w, h))
                     vid_writer.write(im0s)
             frame_num += 1
+        
+        print('BatchAvgFPS=%.2f' % (sum(fpses) / len(fpses) * BATCH_SIZE))
                     
         
     avgFps = (sum(fpses) / len(fpses))

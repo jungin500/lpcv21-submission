@@ -556,6 +556,7 @@ def generateDynColorDict(groundtruths_path, clr_offs, args):
         else:
             frame_num += 1
 
+    del dataset
 
     #For each ball finalize color
     for ball in Ball_list:
