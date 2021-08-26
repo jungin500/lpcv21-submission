@@ -11,7 +11,7 @@ import torchvision
 from model import Net
 
 parser = argparse.ArgumentParser(description="Train on market1501")
-parser.add_argument("--data-dir",default='data',type=str)
+parser.add_argument("--data-dir",default=r'C:\Dataset\Market-1501-v15.09.15',type=str)
 parser.add_argument("--no-cuda",action="store_true")
 parser.add_argument("--gpu-id",default=0,type=int)
 parser.add_argument("--lr",default=0.1, type=float)
@@ -41,11 +41,11 @@ transform_test = torchvision.transforms.Compose([
 ])
 trainloader = torch.utils.data.DataLoader(
     torchvision.datasets.ImageFolder(train_dir, transform=transform_train),
-    batch_size=64,shuffle=True
+    batch_size=128, shuffle=True, num_workers=4, persistent_workers=True
 )
 testloader = torch.utils.data.DataLoader(
     torchvision.datasets.ImageFolder(test_dir, transform=transform_test),
-    batch_size=64,shuffle=True
+    batch_size=128, shuffle=False, num_workers=0
 )
 num_classes = max(len(trainloader.dataset.classes), len(testloader.dataset.classes))
 

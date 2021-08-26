@@ -50,8 +50,8 @@ class Net(nn.Module):
         super(Net,self).__init__()
         # 3 128 64
         self.conv = nn.Sequential(
-            nn.Conv2d(3,24,3,stride=1,padding=1),
-            nn.BatchNorm2d(24),
+            nn.Conv2d(3,32,3,stride=1,padding=1),
+            nn.BatchNorm2d(32),
             nn.ReLU(inplace=True),
             # nn.Conv2d(32,32,3,stride=1,padding=1),
             # nn.BatchNorm2d(32),
@@ -59,19 +59,19 @@ class Net(nn.Module):
             nn.MaxPool2d(3,2,padding=1),
         )
         # 32 64 32
-        self.layer1 = make_layers(24,24,2,False)
+        self.layer1 = make_layers(32,32,2,False)
         # 32 64 32
-        self.layer2 = make_layers(24,32,2,True)
+        self.layer2 = make_layers(32,48,2,True)
         # 64 32 16
-        self.layer3 = make_layers(32,48,2,True)
+        self.layer3 = make_layers(48,64,2,True)
         # 128 16 8
-        self.layer4 = make_layers(48,64,2,True)
+        self.layer4 = make_layers(64,128,2,True)
         # 256 8 4
         self.avgpool = nn.AvgPool2d((8,4),1)
         # 256 1 1 
         self.reid = reid
         self.classifier = nn.Sequential(
-            nn.Linear(64, 72),
+            nn.Linear(128, 72),
             nn.BatchNorm1d(72),
             nn.ReLU(inplace=True),
             nn.Dropout(),
