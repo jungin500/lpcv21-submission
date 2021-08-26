@@ -42,7 +42,6 @@ class Extractor(object):
             if self.device != 'cpu':
                 im_batch = im_batch.to(self.device)
             features = self.net(im_batch)
-            print("Feautres:", features.shape)
 
             if self.device.type != 'cpu':
                 features = features.cpu()

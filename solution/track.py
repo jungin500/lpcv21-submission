@@ -17,7 +17,7 @@ import sys
 dir_path = os.path.dirname(os.path.realpath(__file__))
 sys.path.insert(0, dir_path+'/yolov5')
 
-from yolox.data.datasets.lpcvloader import LoadStreams, LoadImages
+from yolox.data.datasets.lpcvloader import LoadImages
 from deep_sort.utils.parser import get_config
 from deep_sort.deep_sort import DeepSort
 
@@ -88,7 +88,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     # Load model (YOLOX)
     EXP_PATH = 'solution/yolox/exps/custom/model_yj.py'
     CHECKPOINT_PATH = 'solution/yolox/weights/best_ckpt.pth'
-    BATCH_SIZE=16
+    BATCH_SIZE=4
 
     exp = get_exp(EXP_PATH, None)
     # exp.test_conf = 0.25
@@ -120,7 +120,7 @@ def detect(opt, device, half, colorDict, save_img=False):
 
     # Set Dataloader
     vid_path, vid_writer = None, None
-    dataset = LoadImages(source, img_size=imgsz, batch_size=BATCH_SIZE, skip_frames=skipLimit, stride=stride)
+    dataset = LoadImages(source, img_size=imgsz, batch_size=BATCH_SIZE, skip_frames=skipLimit, stride=stride, multithreaded=False)
 
     # Get names and colors
     # names = model.module.names if hasattr(model, 'module') else model.names
@@ -132,20 +132,24 @@ def detect(opt, device, half, colorDict, save_img=False):
         [[203, 20, 169], [136, 240, 229]]
     '''
     names = ['person', 'sports ball']
-    colors = [[203, 20, 169], [136, 240, 229]]
 
     # Run inference
     if device.type != 'cpu':
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
-
+    
+    t3 = None
     for path, im0sb, vid_cap in dataset:
         # Inference
         t1 = time_synchronized()
 
+        if t3 is not None:
+            dataloader_time = t1 - t3
+        else:
+            dataloader_time = 0.0
+
         # Inference + NMS (YOLOX)
         preds, img_infos = predictor.inference_batched(im0sb)
-
-        batch_fpses = []
+        t2 = time_synchronized()
 
         # YOLOX postprocessing
         for b in range(BATCH_SIZE):
@@ -158,9 +162,8 @@ def detect(opt, device, half, colorDict, save_img=False):
 
             # Process detections
             save_path = str(Path(out) / Path(path).name)
-            txt_path = str(Path(out) / Path(path).stem) + ('_%g' % dataset.frame if dataset.mode == 'video' else '')
 
-            bbox_xywh = []
+            xywhs = []
             confs = []
             clses = []
 
@@ -179,28 +182,28 @@ def detect(opt, device, half, colorDict, save_img=False):
                     x_c, y_c, bbox_w, bbox_h = main.bbox_rel(img_w, img_h, *[x0, y0, x1, y1])
                     obj = [x_c, y_c, bbox_w, bbox_h]
 
-                    bbox_xywh.append(obj)
+                    xywhs.append(obj)
                     confs.append([conf.item()])
                     clses.append([cls.item()])
                 
-            xywhs = torch.Tensor(bbox_xywh)
-            confss = torch.Tensor(confs)
+            xywhs = torch.Tensor(xywhs)
+            confs = torch.Tensor(confs)
             clses = torch.Tensor(clses)
             # Pass detections to deepsort
             outputs = []
+
             if not 'disable' in groundtruths_path:
-                # print('\nenabled', groundtruths_path)
                 groundtruths = solution.load_labels(groundtruths_path, img_w,img_h, frame_num)
+
                 if (groundtruths.shape[0]==0):
-                    outputs = deepsort.update(xywhs, confss, clses, im0s)
+                    outputs = deepsort.update(xywhs, confs, clses, im0s)
                 else:
                     # print(groundtruths)
                     xywhs = groundtruths[:,2:]
                     tensor = torch.tensor((), dtype=torch.int32)
-                    confss = tensor.new_ones((groundtruths.shape[0], 1))
+                    confs = tensor.new_ones((groundtruths.shape[0], 1))
                     clses = groundtruths[:,0:1]
-                    outputs = deepsort.update(xywhs, confss, clses, im0s)
-                
+                    outputs = deepsort.update(xywhs, confs, clses, im0s)
                 
                 if frame_num >= 2:
                     for real_ID in groundtruths[:,1:].tolist():
@@ -208,8 +211,7 @@ def detect(opt, device, half, colorDict, save_img=False):
                             if (abs(DS_ID[0]-real_ID[1])/img_w < 0.005) and (abs(DS_ID[1]-real_ID[2])/img_h < 0.005) and (abs(DS_ID[2]-real_ID[3])/img_w < 0.005) and(abs(DS_ID[3]-real_ID[4])/img_w < 0.005):
                                 id_mapping[DS_ID[4]] = int(real_ID[0])
             else:
-                outputs = deepsort.update(xywhs, confss, clses, im0s)
-
+                outputs = deepsort.update(xywhs, confs, clses, im0s)
 
             # draw boxes for visualization
             if len(outputs) > 0:
@@ -228,17 +230,8 @@ def detect(opt, device, half, colorDict, save_img=False):
 
                 ball_detect, frame_catch_pairs, ball_person_pairs = solution.detect_catches(im0s, bbox_xyxy, clses, mapped_id_list, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, save_img)
 
-                t3 = time_synchronized()
                 if save_img or view_img:
                     main.draw_boxes(im0s, bbox_xyxy, [names[i] if i < len(names) else 'Unknown' for i in clses], scores, ball_detect, id_mapping, identities)
-            else:
-                t3 = time_synchronized()
-
-
-            #Inference Time
-            fps = (1/(t3 - t1))
-            fpses.append(fps)
-            batch_fpses.append(fps)
             
             # Stream results
             if view_img:
@@ -268,12 +261,17 @@ def detect(opt, device, half, colorDict, save_img=False):
                     vid_writer.write(im0s)
             frame_num += 1
         
-        print('BatchAvgFPS=%.2f' % (sum(fpses) / len(fpses) * BATCH_SIZE))
-                    
+        t3 = time_synchronized()
+        
+        #Inference Time
+        forward_ms = (t2 - t1) / BATCH_SIZE
+        postprocess_ms = (t3 - t2) / BATCH_SIZE
+        fps = (BATCH_SIZE/(t3 - t1))
+        fpses.append(fps)
+        print('BATCH=%d DATA=%.2f ms/F MODL=%.2f ms/F POST=%.2f ms/F ALL=%.2f fps' % (BATCH_SIZE, dataloader_time, forward_ms, postprocess_ms, fps))
         
     avgFps = (sum(fpses) / len(fpses))
     print('Average FPS = %.2f' % avgFps)
-
 
     outpath = os.path.basename(source)
     outpath = outpath[:-4]
