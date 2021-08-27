@@ -214,7 +214,7 @@ class LoadImages:  # for inference
                 # Skip n frame from VideoCapture
                 # but do not skip first 10 frame
                 if self.frame > 10:
-                    [self.cap.read() for _ in range(self.skip_frames)]
+                    [self.cap.grab() for _ in range(self.skip_frames)]
 
                 # Read frame
                 ret_val, img0 = self.cap.read()
@@ -244,7 +244,7 @@ class LoadImages:  # for inference
 
             img0s = [img0]
 
-        return path, img0s, self.cap
+        return path, img0s
 
     def new_video(self, path):
         self.frame = 0

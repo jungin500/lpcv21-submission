@@ -13,13 +13,11 @@ class Predictor(object):
         model,
         exp,
         cls_names=COCO_CLASSES,
-        decoder=None,
         device="cpu",
         legacy=False,
     ):
         self.model = model
         self.cls_names = cls_names
-        self.decoder = decoder
         self.num_classes = exp.num_classes
         self.confthre = exp.test_conf
         self.nmsthre = exp.nmsthre
@@ -40,14 +38,12 @@ class Predictor(object):
 
         img, _ = self.preproc(img, None, self.test_size)
         img = torch.from_numpy(img).unsqueeze(0)
-        if self.device == "gpu":
-            img = img.cuda().half()
+        if self.device != 'cpu':
+            img = img.cuda()# .half()
 
         with torch.no_grad():
             t0 = time.time()
             outputs = self.model(img)
-            if self.decoder is not None:
-                outputs = self.decoder(outputs, dtype=outputs.type())
             outputs = postprocess(
                 outputs, self.num_classes, self.confthre, self.nmsthre
             )
@@ -70,8 +66,8 @@ class Predictor(object):
 
             img, _ = self.preproc(img, None, self.test_size)
             img = torch.from_numpy(img).unsqueeze(0)
-            if self.device == "gpu":
-                img = img.cuda().half()
+            if self.device != 'cpu':
+                img = img.cuda()# .half()
 
             imgs_batched.append(img)
             img_infos.append(img_info)
@@ -80,8 +76,6 @@ class Predictor(object):
 
         with torch.no_grad():
             outputs_batched = self.model(imgs_batched)
-            if self.decoder is not None:
-                outputs_batched = self.decoder(outputs_batched, dtype=outputs_batched.type())
             outputs_batched = postprocess(
                 outputs_batched, self.num_classes, self.confthre, self.nmsthre
             )

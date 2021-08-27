@@ -20,6 +20,8 @@ class Ball:
         self.color_val = []
         self.color_counts = dict.fromkeys(colorDict.keys(), 0)
 
+        # "Occupied by person" flag
+        self.occupied = False
 
     def __str__(self):
         return "<ID: " + str(self.id) + " Color Counts: " + str(self.color_counts) + " >"
@@ -123,22 +125,22 @@ def load_labels(file_name, image_width, image_height, frame_number=-1):
 
 
 #Output Functions for Sample Solution
-def detect_catches(image, bbox_xyxy, classes, ids, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, save_img):
+def detect_catches(image, bbox_xyxy, classes, ids, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, prev_collisions, skipLimit, save_img):
     #Create a list of bbox centers and ranges
     bbox_XYranges = bbox_xyxy2XYranges(bbox_xyxy)
     
     #Detect the color of each ball and return a dictionary matching id to color
-    detected_ball_colors = detect_colors(image, bbox_XYranges, classes, ids, colorDict, save_img)
+    detected_balls = detect_colors(image, bbox_XYranges, classes, ids, colorDict, save_img)
 
     #Detect collison between balls and people
-    collisions = detect_collisions(classes, ids, frame_num, bbox_XYranges, detected_ball_colors)
+    collisions = detect_collisions(prev_collisions, classes, ids, frame_num, bbox_XYranges, detected_balls)
 
     #Update dictionary pairs
-    frame_catch_pairs, ball_person_pairs = update_dict_pairs(frame_num, collisions, frame_catch_pairs, ball_person_pairs, colorOrder)
-    bbox_strings = format_bbox_strings(ids, classes, detected_ball_colors, collisions)
+    frame_catch_pairs, ball_person_pairs = update_dict_pairs(frame_num, collisions, frame_catch_pairs, skipLimit, ball_person_pairs, colorOrder)
+    bbox_strings = format_bbox_strings(ids, classes, detected_balls, collisions)
 
     
-    return (bbox_strings, frame_catch_pairs, ball_person_pairs)
+    return (collisions, bbox_strings, frame_catch_pairs, ball_person_pairs)
     
 
 
@@ -146,7 +148,7 @@ def detect_catches(image, bbox_xyxy, classes, ids, frame_num, colorDict, frame_c
 def detect_colors(image, bbox_XYranges, classes, ids, colorDict, save_img):
     #Cross_size is the number of radial members around the center
     #Bbox_offset is the radius of the bbox
-    detected_ball_colors = {}
+    detected_balls = {}
     size = 6
     Ball_list = []
 
@@ -168,9 +170,9 @@ def detect_colors(image, bbox_XYranges, classes, ids, colorDict, save_img):
     Ball_list = assign_colors(Ball_list)
 
     for ball in Ball_list:
-        detected_ball_colors[ball.id] = ball.get_detected_bbox_color()
+        detected_balls[ball.id] = ball
       
-    return detected_ball_colors
+    return detected_balls
 
 
 
@@ -283,18 +285,18 @@ def bbox_xyxy2XYranges(bbox_xyxy):
 
 
 
-def format_bbox_strings(ids, classes, detected_ball_colors, collisions):
+def format_bbox_strings(ids, classes, detected_balls, collisions):
     bbox_strings = [None] * len(classes)
 
     for i in range(len(classes)):
         #Person bbox info
         if (ids[i] in collisions):
-            color = collisions[ids[i]]
+            _, color = collisions[ids[i]]
             txt = 'Holding {color}'.format(color = color)
 
         #Ball bbox info    
-        elif (ids[i] in detected_ball_colors):
-            color = detected_ball_colors[ids[i]][0]
+        elif (ids[i] in detected_balls):
+            color, _, _ = detected_balls[ids[i]].get_detected_bbox_color()
             txt = 'Detected {color}'.format(color = color)
         else:
             txt = ''
@@ -305,11 +307,15 @@ def format_bbox_strings(ids, classes, detected_ball_colors, collisions):
 
 
 
-def detect_collisions(classes, ids, frame_num, bbox_XYranges, detected_ball_colors):
+def detect_collisions(prev_collisions, classes, ids, frame_num, bbox_XYranges, detected_balls):
     #collisions = {'id' : color, ....}
     collisions = {}
     #maxId = value after maxID is likely not tracked correctly
     maxId = 8
+    
+    # Reset occupied flag
+    for ball in detected_balls:
+        detected_balls[ball].occupied = False
 
     for i in range(len(classes)):
         #Check if a person
@@ -319,15 +325,30 @@ def detect_collisions(classes, ids, frame_num, bbox_XYranges, detected_ball_colo
             person_X_range = bbox_XYranges[i][2]
             person_Y_range = bbox_XYranges[i][3]
 
+            #Add additional bbox range (as ball would not be in person's box)
+            person_width, person_height = person_X_range[1] - person_X_range[0], person_Y_range[1] - person_Y_range[0]
+            width_margin, height_margin = int(person_width * 0.15), person_height * 0.15
+            person_X_range = person_X_range[0] - width_margin, person_X_range[1] + width_margin
+            person_Y_range = person_Y_range[0] - height_margin, person_Y_range[1] + height_margin
+
             #Check if the center of a ball is in a persons bounding box
             #detected_ball_colors = {'id' : [color, X, Y], ...}
-            for ball in detected_ball_colors:
-                ball_color = detected_ball_colors[ball][0]
-                ball_X = detected_ball_colors[ball][1]
-                ball_Y = detected_ball_colors[ball][2]
+            for ball in detected_balls:
+                if detected_balls[ball].occupied:
+                    continue
+
+                ball_color, ball_X, ball_Y = detected_balls[ball].get_detected_bbox_color()
+
+                # Persistent collision - if ball is previously grabbed by another person,
+                # Do not change person within 3 frame intervals
+                if ids[i] in prev_collisions.keys():
+                    prev_collision_item = prev_collisions[ids[i]]
+                    if prev_collision_item is not None and prev_collision_item[1] != ball_color and frame_num - prev_collision_item[0] < 3:
+                        continue
 
                 if (ball_X >= person_X_range[0] and ball_X <= person_X_range[1] and ball_Y >= person_Y_range[0] and ball_Y <= person_Y_range[1] and (ball_color not in collisions.values())):
-                    collisions[ids[i]] = ball_color
+                    collisions[ids[i]] = (frame_num, ball_color)
+                    detected_balls[ball].occupied = True
                     break
 
     return collisions
@@ -335,11 +356,11 @@ def detect_collisions(classes, ids, frame_num, bbox_XYranges, detected_ball_colo
 
 
 
-def update_dict_pairs(frame_num, collisions, frame_catch_pairs, ball_person_pairs, colorOrder):
+def update_dict_pairs(frame_num, collisions, frame_catch_pairs, skipLimit, ball_person_pairs, colorOrder):
     updateFrames = 0
 
     for person in collisions:
-        color = collisions[person]
+        _, color = collisions[person]
         tmp = {}
         #Ball color has not been held yet
         if (color not in ball_person_pairs):
@@ -351,13 +372,22 @@ def update_dict_pairs(frame_num, collisions, frame_catch_pairs, ball_person_pair
             updateFrames = 1
 
     if (updateFrames):
-        tmp = ''
-        for color in colorOrder:
-            if color in ball_person_pairs:
-                tmp = tmp + str(ball_person_pairs[color]) + ' '
-            else:
-                tmp = tmp + '0' + ' '
-        frame_catch_pairs.append([frame_num, tmp])
+        tmp = ' '.join([
+            str(ball_person_pairs[color]) if color in ball_person_pairs else '0'
+            for color in ball_person_pairs
+            ])
+        
+        # tmp = ''
+        # for color in colorOrder:
+        #     if color in ball_person_pairs:
+        #         tmp = tmp + str(ball_person_pairs[color]) + ' '
+        #     else:
+        #         tmp = tmp + '0' + ' '
+
+        if frame_num > 10:
+            frame_catch_pairs.append([frame_num - skipLimit, tmp])  # as "previous frame" will be more accurate for correct answer
+        else:
+            frame_catch_pairs.append([frame_num, tmp])
 
     return (frame_catch_pairs, ball_person_pairs)
 
@@ -372,6 +402,8 @@ def write_catches(output_path, frame_catch_pairs, colorDict, colorOrder):
             ball_ids.append(colorDict[color][2])
         ball_ids.insert(0, "frame")
         writer.writerow(ball_ids)
+        print(frame_catch_pairs)
+        print(colorDict)
         frame_catch_pairs = smooth_frame_pairs(frame_catch_pairs, colorDict)
         for i in range(len(frame_catch_pairs)):
             frame = frame_catch_pairs[i][0]
@@ -407,8 +439,7 @@ def smooth_frame_pairs(frame_catch_pairs, colorDict):
                 nxt_i = i
 
                 for cur_frame in tmp_frames:
-                    cur_ids = cur_frame[1][:-1]
-                    cur_ids = cur_ids.split(' ')
+                    cur_ids = cur_frame[1].split(' ')
                     cur_dif = cur_frame[0] - frame
 
                     if(cur_dif < max_diff):
@@ -418,14 +449,16 @@ def smooth_frame_pairs(frame_catch_pairs, colorDict):
                     else:
                         break
             
-                tmp = ''
-                for j in range(len(color_ids)):
-                    # mode = statistics.multimode(color_ids[j])[0]
-                    mode = statistics.mode(color_ids[j])
-                    tmp = tmp + mode + ' '
+                # new_person_id = ''
+                # for j in range(len(color_ids)):
+                #     # mode = statistics.multimode(color_ids[j])[0]
+                #     mode = statistics.mode(color_ids[j])
+                #     print("color_ids[j]:", color_ids[j], "statistics.mode(color_ids[j]):", statistics.mode(color_ids[j]))
+                #     new_person_id = new_person_id + mode + ' '
+                new_person_id = ' '.join([statistics.mode(color_ids[j]) for j in range(len(color_ids))])
             
                 i = nxt_i
-                smooth_pairs.append([frame,tmp]) 
+                smooth_pairs.append([frame,new_person_id]) 
             else:
                 smooth_pairs.append(frame_catch_pairs[i])
                 i = i + 1
@@ -500,7 +533,7 @@ def generateDynColorDict(groundtruths_path, clr_offs, args):
     static_colorDict = default_colorDict()
 
     print("\nAssigning Colors to IDs")
-    for _, im0s, _ in dataset:
+    for _, im0s in dataset:
         im0 = im0s[0]
         img_h, img_w, _ = im0.shape
         groundtruths = load_labels(groundtruths_path, img_w, img_h, frame_num)
@@ -535,7 +568,7 @@ def generateDynColorDict(groundtruths_path, clr_offs, args):
     frame_num = 0
     dataset.frame = frame_num
     print("\n\nAssigning Colors to Balls")
-    for _, im0s, _ in dataset:
+    for _, im0s in dataset:
         im0 = im0s[0]
         img_h, img_w, _ = im0.shape
         groundtruths = load_labels(groundtruths_path, img_w, img_h, frame_num)

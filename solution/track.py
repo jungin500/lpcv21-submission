@@ -113,7 +113,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     # model = torch.quantization.convert(model_p)
     
     # Create predictor from model
-    predictor = Predictor(model, exp, BALLPERSON_CLASSES, None, 'gpu' if device.type == 'cuda' else 'cpu', False)
+    predictor = Predictor(model, exp, BALLPERSON_CLASSES, device.type, False)
 
     stride = 32
     imgsz = 640
@@ -136,14 +136,21 @@ def detect(opt, device, half, colorDict, save_img=False):
     # Run inference
     if device.type != 'cpu':
         model(torch.zeros(1, 3, imgsz, imgsz).to(device).type_as(next(model.parameters())))  # run once
+
+    # Get required informations
+    vid_fps = dataset.cap.get(cv2.CAP_PROP_FPS)
+    vid_width = int(dataset.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    vid_height = int(dataset.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
     
     t3 = None
-    for path, im0sb, vid_cap in dataset:
+    prev_collisions = {}
+    intval = 1
+    for path, im0sb in dataset:
         # Inference
         t1 = time_synchronized()
 
         if t3 is not None:
-            dataloader_time = t1 - t3
+            dataloader_time = (t1 - t3) * 1000
         else:
             dataloader_time = 0.0
 
@@ -208,8 +215,13 @@ def detect(opt, device, half, colorDict, save_img=False):
                 if frame_num >= 2:
                     for real_ID in groundtruths[:,1:].tolist():
                         for DS_ID in xyxy2xywh(outputs[:, :5]):
-                            if (abs(DS_ID[0]-real_ID[1])/img_w < 0.005) and (abs(DS_ID[1]-real_ID[2])/img_h < 0.005) and (abs(DS_ID[2]-real_ID[3])/img_w < 0.005) and(abs(DS_ID[3]-real_ID[4])/img_w < 0.005):
-                                id_mapping[DS_ID[4]] = int(real_ID[0])
+                            bx1, by1, bx2, by2, identity = DS_ID
+                            r_identity, rbx1, rby1, rbx2, rby2 = real_ID
+                            
+                            # If BBox is same as GT, assign that ID to ID map
+                            if (abs(bx1-rbx1)/img_w < 0.005) and (abs(by1-rby1)/img_h < 0.005) and (abs(bx2-rbx2)/img_w < 0.005) and(abs(by2-rby2)/img_h < 0.005):
+                                # print("New Identity %s inserted as %d" % (identity, r_identity))
+                                id_mapping[identity] = int(r_identity)
             else:
                 outputs = deepsort.update(xywhs, confs, clses, im0s)
 
@@ -219,25 +231,43 @@ def detect(opt, device, half, colorDict, save_img=False):
                 identities = outputs[:, 4]
                 clses = outputs[:, 5]
                 scores = outputs[:, 6]
+
+                # Clip bbox_xyxy - fix for "Out of bound of Image Error"
+                for i in range(bbox_xyxy.shape[0]):
+                    x1, y1, x2, y2 = bbox_xyxy[i]
+                    if vid_width <= x1 or vid_width <= x2 or \
+                        vid_height <= y1 or vid_height <= y2:
+                        bbox_xyxy[i] = np.array([0, 0, 0, 0])
                 
                 #Temp solution to get correct id's 
                 mapped_id_list = []
+                unknown_id_list = []
                 for ids in identities:
                     if(ids in id_mapping):
                         mapped_id_list.append(int(id_mapping[ids]))
                     else:
+                        #! TODO Reqired polishing of IDs!
+                        # previous person ID must have loopup to original person ID
                         mapped_id_list.append(ids)
 
-                ball_detect, frame_catch_pairs, ball_person_pairs = solution.detect_catches(im0s, bbox_xyxy, clses, mapped_id_list, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, save_img)
+                # print("Not on Mapped ID list: ", unknown_id_list)
+
+                collisions, bbox_strings, frame_catch_pairs, ball_person_pairs = solution.detect_catches(im0s, bbox_xyxy, clses, mapped_id_list, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, prev_collisions, skipLimit, save_img)
+                prev_collisions = collisions
 
                 if save_img or view_img:
-                    main.draw_boxes(im0s, bbox_xyxy, [names[i] if i < len(names) else 'Unknown' for i in clses], scores, ball_detect, id_mapping, identities)
+                    main.draw_boxes(im0s, bbox_xyxy, [names[i] if i < len(names) else 'Unknown' for i in clses], scores, bbox_strings, id_mapping, identities)
             
             # Stream results
             if view_img:
                 cv2.imshow(path, cv2.resize(im0s, [1920, 1080]))
-                if cv2.waitKey(1) == ord('q'):  # q to quit
+                ret = cv2.waitKey(intval)
+                if ret == ord('q'):  # q to quit
                     raise StopIteration
+                elif ret == ord('r'):  # r to run continuously
+                    intval = 1
+                elif ret == ord('p'): # p to pause
+                    intval = 0
 
             # Save results (image with detections)
             if save_img:
@@ -254,10 +284,7 @@ def detect(opt, device, half, colorDict, save_img=False):
                         if isinstance(vid_writer, cv2.VideoWriter):
                             vid_writer.release()  # release previous video writer
 
-                        fps = vid_cap.get(cv2.CAP_PROP_FPS)
-                        w = int(vid_cap.get(cv2.CAP_PROP_FRAME_WIDTH))
-                        h = int(vid_cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
-                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), fps, (w, h))
+                        vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), vid_fps, (vid_width, vid_height))
                     vid_writer.write(im0s)
             if frame_num > 10:
                 frame_num += skipLimit
@@ -266,11 +293,14 @@ def detect(opt, device, half, colorDict, save_img=False):
         t3 = time_synchronized()
         
         #Inference Time
-        forward_ms = (t2 - t1) / BATCH_SIZE
-        postprocess_ms = (t3 - t2) / BATCH_SIZE
-        fps = (BATCH_SIZE/(t3 - t1))
-        fpses.append(fps)
-        print('BATCH=%d DATA=%.2f ms/F MODL=%.2f ms/F POST=%.2f ms/F ALL=%.2f fps' % (BATCH_SIZE, dataloader_time, forward_ms, postprocess_ms, fps))
+        forward_ms = (t2 - t1) / BATCH_SIZE * 1000
+        postprocess_ms = (t3 - t2) / BATCH_SIZE * 1000
+        vid_fps = ((BATCH_SIZE * (1+skipLimit))/(t3 - t1))
+        fpses.append(vid_fps)
+        print('LSTCATCH=%s BATCH=%d DATA=%.2f ms/F MODL=%.2f ms/F POST=%.2f ms/F ALL=%.2f fps' % (
+            "None" if len(frame_catch_pairs) == 0 else "\"Frame=%d/PersonID=%s\"" % (frame_catch_pairs[-1][0], frame_catch_pairs[-1][1].strip()),
+            BATCH_SIZE, dataloader_time, forward_ms, postprocess_ms, vid_fps
+            ))
         
     avgFps = (sum(fpses) / len(fpses))
     print('Average FPS = %.2f' % avgFps)
