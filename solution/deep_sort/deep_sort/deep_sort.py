@@ -8,7 +8,7 @@ from .sort.detection import Detection
 from .sort.tracker import Tracker
 
 import datetime
-
+import time
 
 __all__ = ['DeepSort']
 
@@ -27,16 +27,25 @@ class DeepSort(object):
 
     def update(self, bbox_xywh, confidences, clses, ori_img):
         self.height, self.width = ori_img.shape[:2]
+        
         # generate detections
         features = self._get_features(bbox_xywh, ori_img)
         bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)
         detections = [Detection(bbox_tlwh[i], conf, features[i], clses[i]) for i,conf in enumerate(confidences) if conf>self.min_confidence]
+        # for det in detections:
+        #     print("BEF det.tlwh", det.tlwh, "det.confidence", det.confidence, "det.clses", det.clses)
 
         # run on non-maximum supression
-        boxes = np.array([d.tlwh for d in detections])
-        scores = np.array([d.confidence for d in detections])
-        indices = non_max_suppression(boxes, self.nms_max_overlap, scores)
-        detections = [detections[i] for i in indices]
+        # 1~2ms time consumption
+        # begin = time.time()
+        # boxes = np.array([d.tlwh for d in detections])
+        # scores = np.array([d.confidence for d in detections])
+        # indices = non_max_suppression(boxes, self.nms_max_overlap, scores)
+        # end = time.time()
+        # print("NMS time: %d ms" % int((end - begin) * 1000))
+        # detections = [detections[i] for i in indices]
+        # for det in detections:
+        #     print("AFT det.tlwh", det.tlwh, "det.confidence", det.confidence, "det.clses", det.clses)
 
         # update tracker
         self.tracker.predict()

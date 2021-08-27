@@ -19,7 +19,7 @@ class YamlParser(edict):
 
     
     def merge_from_file(self, config_file):
-        with open(config_file, 'r') as fo:
+        with open(config_file, 'r', encoding='utf-8') as fo:
             self.update(yaml.load(fo.read(), Loader=yaml.FullLoader))
 
     

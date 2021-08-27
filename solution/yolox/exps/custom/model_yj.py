@@ -54,8 +54,8 @@ class Exp(MyExp):
         self.exp_name = os.path.split(os.path.realpath(__file__))[1].split(".")[0]
 
         # -----------------  testing config ------------------ #
-        self.test_size = (384, 640)
-        self.test_conf = 0.3
+        self.test_size = (320, 576)
+        self.test_conf = 0.25
         self.nmsthre = 0.45
 
     def get_model(self, sublinear=False):
