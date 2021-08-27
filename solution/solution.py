@@ -402,8 +402,6 @@ def write_catches(output_path, frame_catch_pairs, colorDict, colorOrder):
             ball_ids.append(colorDict[color][2])
         ball_ids.insert(0, "frame")
         writer.writerow(ball_ids)
-        print(frame_catch_pairs)
-        print(colorDict)
         frame_catch_pairs = smooth_frame_pairs(frame_catch_pairs, colorDict)
         for i in range(len(frame_catch_pairs)):
             frame = frame_catch_pairs[i][0]

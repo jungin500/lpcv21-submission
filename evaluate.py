@@ -37,8 +37,6 @@ for i in range(len(target_list)):
     output_csv_body = output_csv_body[1:]
     output_csv_body = output_csv_body[gt_csv_body_column_names]
     output_csv_body = output_csv_body.to_numpy()
-    print(output_csv_body)
-
     results = []
 
     for idx in range(gt_csv_body.shape[0]):
@@ -48,7 +46,7 @@ for i in range(len(target_list)):
         for idx in range(output_csv_body.shape[0]):
             # print(int(output_csv_body[idx, 0]))
             if frame - 5 <= output_csv_body[idx, 0] <= frame + 5:
-                print("%d Frame - Output: ", output_csv_body[idx, 1:], ", GT: ", items)
+                # print("%d Frame - Output: ", output_csv_body[idx, 1:], ", GT: ", items)
                 if (output_csv_body[idx, 1:] == items).all():
                     results.append(1)
                     is_correct = True
