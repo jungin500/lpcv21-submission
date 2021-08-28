@@ -35,6 +35,25 @@ class BasicBlock(nn.Module):
         if self.is_downsample:
             x = self.downsample(x)
         return F.relu(x.add(y),True)
+    
+    def _quant_forward(self, x):
+        y = self.conv1(x)
+        y = self.bn1(y)
+        y = self.relu(y)
+        y = self.conv2(y)
+        y = self.bn2(y)
+        if self.is_downsample:
+            x = self.downsample(x)
+        x = self.dequant(x)
+        y = self.dequant(y)
+        x = x.add(y)
+        x = self.requant(x)
+        return F.relu(x,True)
+    
+    def quantize(self):
+        self.dequant = torch.quantization.DeQuantStub()
+        self.requant = torch.quantization.QuantStub()
+
 
 def make_layers(c_in,c_out,repeat_times, is_downsample=False):
     blocks = []
@@ -94,11 +113,150 @@ class Net(nn.Module):
         x = self.classifier(x)
         return x
 
+    def _quant_forward(self, x):
+        x = self.quant(x)
+        x = self.conv(x)
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+        x = self.avgpool(x)
+        x = x.view(x.size(0),-1)
+        # B x 128
+        if self.reid:
+            x = x.div(x.norm(p=2,dim=1,keepdim=True))
+            return x
+        # classifier
+        x = self.classifier(x)
+        x = self.dequant(x)
+        return x
+
+    def fuse_modules(self):
+        conv = nn.ModuleList([layer for layer in self.conv.children()])
+        conv = torch.quantization.fuse_modules(conv, [['0', '1', '2']], inplace=True)  # 0, 1, 2 -> conv-bn-relu
+        self.conv = nn.Sequential(*conv)
+
+        layer1 = self._fuse_basicblock(self.layer1)
+        layer2 = self._fuse_basicblock(self.layer2)
+        layer3 = self._fuse_basicblock(self.layer3)
+        layer4 = self._fuse_basicblock(self.layer4)
+
+        self.layer1 = nn.Sequential(*layer1)
+        self.layer2 = nn.Sequential(*layer2)
+        self.layer3 = nn.Sequential(*layer3)
+        self.layer4 = nn.Sequential(*layer4)
+
+        classifier = nn.ModuleList([layer for layer in self.classifier.children()])
+        classifier = torch.quantization.fuse_modules(classifier, [['0', '1']], inplace=True)  # 0, 1 -> linear-bn
+        self.classifier = nn.Sequential(*classifier)
+
+    def _fuse_basicblock(self, layer):
+        sublayers = nn.ModuleList([layer for layer in layer.children()])
+        for basicblock in sublayers:
+            if type(basicblock) != BasicBlock:
+                continue
+            basicblock = torch.quantization.fuse_modules(basicblock, [['conv1', 'bn1', 'relu'], ['conv2', 'bn2']], inplace=True)
+            if basicblock.is_downsample:
+                downsample = nn.ModuleList([layer for layer in basicblock.downsample.children()])
+                downsample = torch.quantization.fuse_modules(downsample, [['0', '1']], inplace=True)  # 0, 1 -> conv-bn
+                basicblock.downsample = nn.Sequential(*downsample)
+        return sublayers
+
+    '''
+        activation_dataset -> torch.Tensor([B, 3, 128, 64]) -> (B is mandatory)
+    '''
+    def quantize(self, activation_dataset):
+        self.eval()
+
+        self.qconfig = torch.quantization.get_default_qconfig('qnnpack')
+        
+        self.quant = torch.quantization.QuantStub()
+        self.dequant = torch.quantization.DeQuantStub()
+        self.forward = self._quant_forward
+
+        layer1 = self._quant_basicblock(self.layer1)
+        layer2 = self._quant_basicblock(self.layer2)
+        layer3 = self._quant_basicblock(self.layer3)
+        layer4 = self._quant_basicblock(self.layer4)
+
+        self.layer1 = nn.Sequential(*layer1)
+        self.layer2 = nn.Sequential(*layer2)
+        self.layer3 = nn.Sequential(*layer3)
+        self.layer4 = nn.Sequential(*layer4)
+
+        prepared_model = torch.quantization.prepare(self)
+        prepared_model(activation_dataset)  # activate model
+
+        return torch.quantization.convert(prepared_model)
+
+    def _quant_basicblock(self, layer):
+        sublayers = nn.ModuleList([layer for layer in layer.children()])
+        for basicblock in sublayers:
+            if type(basicblock) != BasicBlock:
+                continue
+            basicblock.quantize()
+            basicblock.forward = basicblock._quant_forward
+        return sublayers
 
 if __name__ == '__main__':
     net = Net()
-    x = torch.randn(4,3,128,64)
-    y = net(x)
-    import ipdb; ipdb.set_trace()
+    net.eval()
+    
+    import time
+    
+    begin = time.time()
+    for _ in range(20):
+        net(torch.randn(4, 3, 128, 64))
+    end = time.time()
+    print("Before: Elapsed time: %dms" % ((end - begin) * 1000))
 
+    net.fuse_modules()
+    print(net)
 
+    begin = time.time()
+    for _ in range(20):
+        net(torch.randn(4, 3, 128, 64))
+    end = time.time()
+    print("After: Elapsed time: %dms" % ((end - begin) * 1000))
+
+    def generate_activation_market1501():
+        from glob import glob
+        import os
+        import numpy as np
+        import cv2
+        import random
+        
+        root_dir=r'C:\Dataset\Market-1501-v15.09.15\train'
+        all_files = list(glob(os.path.join(root_dir, '*', '*')))
+        random.shuffle(all_files)
+        
+        top_n = 32
+        top_n_files = all_files[:top_n]
+        
+        means = np.expand_dims(np.expand_dims(np.array([0.485, 0.456, 0.406]), 0), 0)
+        stds = np.expand_dims(np.expand_dims(np.array([0.229, 0.224, 0.225]), 0), 0)
+        size = (64, 128)
+        
+        image_batch = []
+        for file in top_n_files:
+            image = cv2.imread(file)
+            image = cv2.resize(image, size)
+            image = cv2.cvtColor(image, cv2.COLOR_BGR2RGB)
+            image = (image / 255.0).astype(np.float32)
+            image -= means
+            image /= stds
+            image = torch.from_numpy(image).permute(2, 0, 1).unsqueeze(0)
+            image_batch.append(image)
+
+        image_batch = torch.cat(image_batch, dim=0)
+        return image_batch
+
+    input_fp32 = generate_activation_market1501()
+    net = net.quantize(input_fp32)
+    
+    print("Evaluating ...\n")
+    begin = time.time()
+    for _ in range(20):
+        net(torch.randn(4, 3, 128, 64))
+    end = time.time()
+    print("After: Elapsed time: %dms" % ((end - begin) * 1000))

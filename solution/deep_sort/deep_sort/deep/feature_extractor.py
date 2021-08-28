@@ -8,16 +8,24 @@ from .model import Net
 
 class Extractor(object):
     def __init__(self, model_path, use_cuda=True):
-        self.net = Net(reid=True)
-        self.net.eval()
-        
-        self.device = torch.device("cuda") if torch.cuda.is_available() and use_cuda else torch.device("cpu")
-        state_dict = torch.load(model_path, map_location=lambda storage, loc: storage)['net_dict']
-        self.net.load_state_dict(state_dict)
-        logger = logging.getLogger("root.tracker")
-        logger.info("Loading weights from {}... Done!".format(model_path))
-        self.net.to(self.device)
+        use_torchscript = True
 
+        self.device = torch.device("cuda") if torch.cuda.is_available() and use_cuda else torch.device("cpu")
+
+        if use_torchscript:
+            # torch.backends.quantized.engine = 'qnnpack'
+            model_path = 'solution/deep_sort/deep_sort/deep/deep_int8_model.torchscript'
+            self.net = torch.jit.load(model_path)
+            self.net.eval()
+        else:
+            self.net = Net(reid=True)
+            self.net.eval()
+            state_dict = torch.load(model_path, map_location=lambda storage, loc: storage)['net_dict']
+            self.net.load_state_dict(state_dict)
+            logger = logging.getLogger("root.tracker")
+            logger.info("Loading weights from {}... Done!".format(model_path))
+    
+        self.net.to(self.device)
         self.size = (64, 128)
         self.means = np.expand_dims(np.expand_dims(np.array([0.485, 0.456, 0.406]), 0), 0)
         self.stds = np.expand_dims(np.expand_dims(np.array([0.229, 0.224, 0.225]), 0), 0)
