@@ -93,7 +93,7 @@ def main(vid_src=None, grd_src=None):
     if vid_src == None and grd_src == None:
         vid_src = sys.argv[1]
         grd_src = sys.argv[2]
-    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs', '--skip-frames', '1', '--device', 'cpu'])
+    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs', '--skip-frames', '2'])
     args.img_size = check_img_size(args.img_size)
     groundtruths_path = args.groundtruths
     

@@ -142,7 +142,7 @@ class BackgroundCv2Thread(Thread):
 
     def read(self):
         while self.is_alive() and len(self.buffer) == 0:
-            time.sleep(0.1)
+            time.sleep(0.01)
         return (False, None) if len(self.buffer) == 0 else (True, self.buffer.pop(0))
 
     def release(self):
@@ -160,7 +160,7 @@ class BackgroundCv2Thread(Thread):
                     break
                 self.buffer.append(frame)
             else:
-                time.sleep(0.1)
+                time.sleep(0.01)
 
         self.cap.release()
 

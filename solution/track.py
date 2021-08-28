@@ -150,7 +150,7 @@ def detect(opt, device, half, colorDict, save_img=False):
         t1 = time_synchronized()
 
         if t3 is not None:
-            dataloader_time = (t1 - t3) * 1000
+            dataloader_time = (t1 - t3) / BATCH_SIZE * 1000
         else:
             dataloader_time = 0.0
 
@@ -295,7 +295,7 @@ def detect(opt, device, half, colorDict, save_img=False):
         #Inference Time
         forward_ms = (t2 - t1) / BATCH_SIZE * 1000
         postprocess_ms = (t3 - t2) / BATCH_SIZE * 1000
-        vid_fps = ((BATCH_SIZE * (1+skipLimit))/(t3 - t1))
+        vid_fps = ((BATCH_SIZE * (1+skipLimit))/(t3 - t1)) if frame_num > 10 else BATCH_SIZE/(t3 - t1)
         fpses.append(vid_fps)
         print('LSTCATCH=%s BATCH=%d DATA=%.2f ms/F MODL=%.2f ms/F POST=%.2f ms/F ALL=%.2f fps' % (
             "None" if len(frame_catch_pairs) == 0 else "\"Frame=%d/PersonID=%s\"" % (frame_catch_pairs[-1][0], frame_catch_pairs[-1][1].strip()),
