@@ -37,11 +37,12 @@ class Tracker:
 
     """
 
-    def __init__(self, metric, max_iou_distance=0.7, max_age=70, n_init=3):
+    def __init__(self, metric, max_iou_distance=0.7, max_age=70, max_tracks=100, n_init=3):
         self.metric = metric
         self.max_iou_distance = max_iou_distance
         self.max_age = max_age
         self.n_init = n_init
+        self.max_tracks = max_tracks
 
         self.kf = kalman_filter.KalmanFilter()
         self.tracks = []
@@ -68,15 +69,57 @@ class Tracker:
         matches, unmatched_tracks, unmatched_detections = \
             self._match(detections)
 
+        # print('matches', matches)
+        # print('unmatched_tracks', unmatched_tracks)
+        # print('unmatched_detections', unmatched_detections)
+
+        # Move invalid class ids to unmatched detections
+        def determine_class_ids(matches_tuple):
+            track_idx, detection_idx = matches_tuple
+            if self.tracks[track_idx].cls != detections[detection_idx].clses:
+                unmatched_detections.append(detection_idx)
+                return False
+            return True
+
+        matches = [m for m in matches if determine_class_ids(m)]
+        
+        for detection_idx in unmatched_detections:
+            if self.max_tracks > len(self.tracks) or \
+                detections[detection_idx].clses == 1:  # only except ball detections
+                _ = self._initiate_track(detections[detection_idx])
+
+        # Rematch unmatched detections
+        # Do not add new track on unmatched detections -
+        # just rematch with existing tracks.
+        # (only if tracks are fully initialized)
+        if len(matches) > 0:
+            pre_matched_detection_idxs = [ m[1] for m in matches ]
+            re_matches, _, _ = self._rematch([detections[i] for i in unmatched_detections])
+
         # Update track set.
         for track_idx, detection_idx in matches:
-            self.tracks[track_idx].update(
-                self.kf, detections[detection_idx])
+            if self.tracks[track_idx].cls == detections[detection_idx].clses:
+                self.tracks[track_idx].update(
+                    self.kf, detections[detection_idx])
+            else:
+                pass
+                # print("Skipping due to class mismatch")
         for track_idx in unmatched_tracks:
             self.tracks[track_idx].mark_missed()
-        for detection_idx in unmatched_detections:
-            new_id = self._initiate_track(detections[detection_idx])
-            self._initiate_track(detections[detection_idx])
+
+        # Additionally update re-matched tracks.
+        # (Also, only if tracks are fully initialized)
+        if len(matches) > 0:
+            for track_idx, detection_idx in re_matches:
+                # Do not update when lower-distance one (above) is already updated
+                if track_idx not in pre_matched_detection_idxs and \
+                    self.tracks[track_idx].cls == detections[detection_idx].clses:
+                    self.tracks[track_idx].update(
+                        self.kf, detections[detection_idx])
+                else:
+                    pass
+                    # print("Skipping re-match")
+
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
 
         # Update distance metric.
@@ -131,10 +174,51 @@ class Tracker:
         unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))
         return matches, unmatched_tracks, unmatched_detections
 
+    def _rematch(self, detections):
+        def gated_metric(tracks, dets, track_indices, detection_indices):
+            features = np.array([dets[i].feature for i in detection_indices])
+            targets = np.array([tracks[i].track_id for i in track_indices])
+            cost_matrix = self.metric.distance(features, targets)
+            cost_matrix = linear_assignment.gate_cost_matrix(
+                self.kf, cost_matrix, tracks, dets, track_indices,
+                detection_indices)
+
+            return cost_matrix
+
+        # Split track set into confirmed and unconfirmed tracks.
+        confirmed_tracks = [
+            i for i, t in enumerate(self.tracks) if t.is_confirmed()]
+        unconfirmed_tracks = [
+            i for i, t in enumerate(self.tracks) if not t.is_confirmed()]
+
+        # Associate confirmed tracks using appearance features.
+        # previously 0.2
+        matches_a, unmatched_tracks_a, unmatched_detections = \
+            linear_assignment.matching_cascade(
+                gated_metric, 100, self.max_age,
+                self.tracks, detections, confirmed_tracks)
+
+        # Associate remaining tracks together with unconfirmed tracks using IOU.
+        iou_track_candidates = unconfirmed_tracks + [
+            k for k in unmatched_tracks_a if
+            self.tracks[k].time_since_update == 1]
+        unmatched_tracks_a = [
+            k for k in unmatched_tracks_a if
+            self.tracks[k].time_since_update != 1]
+        matches_b, unmatched_tracks_b, unmatched_detections = \
+            linear_assignment.min_cost_matching(
+                iou_matching.iou_cost, self.max_iou_distance, self.tracks,
+                detections, iou_track_candidates, unmatched_detections)
+
+        matches = matches_a + matches_b
+        unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))
+        return matches, unmatched_tracks, unmatched_detections
+
     def _initiate_track(self, detection):
         mean, covariance = self.kf.initiate(detection.to_xyah())
         cls = detection.clses
         score = detection.confidence
+        # print("New Track %d" % self._next_id)
         self.tracks.append(Track(
             mean, covariance, self._next_id, self.n_init, self.max_age, cls, score, 
             detection.feature))

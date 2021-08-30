@@ -76,10 +76,15 @@ def detect(opt, device, half, colorDict, save_img=False):
     # initialize deepsort
     cfg = get_config()
     cfg.merge_from_file(opt.config_deepsort)
+
+    labels = solution.load_labels(groundtruths_path, 0, 0, -1)
+    ids = labels['ID'].unique()
+    tracker_max_tracks = len(ids)
+
     deepsort = DeepSort(dir_path + '/' + cfg.DEEPSORT.REID_CKPT,
                         max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE, 
                         nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE, 
-                        max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET, use_cuda=True)
+                        max_tracks=tracker_max_tracks, max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET, use_cuda=True)
 
     # Initialize
     if not os.path.exists(out):
@@ -144,7 +149,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     
     t3 = None
     prev_collisions = {}
-    intval = 1
+    intval = 0  # initial cv2.waitKey() interval
     for path, im0sb in dataset:
         # Inference
         t1 = time_synchronized()
@@ -205,7 +210,6 @@ def detect(opt, device, half, colorDict, save_img=False):
                 if (groundtruths.shape[0]==0):
                     outputs = deepsort.update(xywhs, confs, clses, im0s)
                 else:
-                    # print(groundtruths)
                     xywhs = groundtruths[:,2:]
                     tensor = torch.tensor((), dtype=torch.int32)
                     confs = tensor.new_ones((groundtruths.shape[0], 1))
@@ -213,15 +217,28 @@ def detect(opt, device, half, colorDict, save_img=False):
                     outputs = deepsort.update(xywhs, confs, clses, im0s)
                 
                 if frame_num >= 2:
-                    for real_ID in groundtruths[:,1:].tolist():
-                        for DS_ID in xyxy2xywh(outputs[:, :5]):
-                            bx1, by1, bx2, by2, identity = DS_ID
-                            r_identity, rbx1, rby1, rbx2, rby2 = real_ID
+                    for real_ID in groundtruths.tolist():
+                        r_class_id, r_obj_id, rcx, rcy, rbw, rbh = real_ID
+                        rbx1, rby1, rbx2, rby2 = rcx-rbw/2, rcy-rbh/2, rcx+rbw/2, rcy+rbh/2
+                        rvol = rbw * rbh
+                        
+                        for DS_ID in outputs[:, :6].tolist():
+                            bx1, by1, bx2, by2, det_obj_id, class_id = DS_ID
+                            bw, bh = bx2 - bx1, by2 - by1
+                            vol = bw * bh
+
+                            # if two boxes are not overlapped, continue
+                            if (max(bx2, rbx2) - min(bx1, rbx1)) > rbw + bw or \
+                                (max(by2, rby2) - min(by1, rby1)) > rbh + bh:
+                                continue
+
+                            intersection = (min(bx2, rbx2) - max(bx1, rbx1)) * (min(by2, rby2) - max(by1, rby1))
+                            union = vol + rvol - intersection
+                            iou = intersection / union
                             
                             # If BBox is same as GT, assign that ID to ID map
-                            if (abs(bx1-rbx1)/img_w < 0.005) and (abs(by1-rby1)/img_h < 0.005) and (abs(bx2-rbx2)/img_w < 0.005) and(abs(by2-rby2)/img_h < 0.005):
-                                # print("New Identity %s inserted as %d" % (identity, r_identity))
-                                id_mapping[identity] = int(r_identity)
+                            if iou > 0.8 and r_class_id == class_id:
+                                id_mapping[det_obj_id] = int(r_obj_id)
             else:
                 outputs = deepsort.update(xywhs, confs, clses, im0s)
 
@@ -293,9 +310,9 @@ def detect(opt, device, half, colorDict, save_img=False):
         t3 = time_synchronized()
         
         #Inference Time
-        forward_ms = (t2 - t1) / BATCH_SIZE * 1000
-        postprocess_ms = (t3 - t2) / BATCH_SIZE * 1000
-        vid_fps = ((BATCH_SIZE * (1+skipLimit))/(t3 - t1)) if frame_num > 10 else BATCH_SIZE/(t3 - t1)
+        forward_ms = (t2 - t1) / (BATCH_SIZE * (1 + (skipLimit if frame_num > 10 else 0))) * 1000
+        postprocess_ms = (t3 - t2) / (BATCH_SIZE * (1 + (skipLimit if frame_num > 10 else 0))) * 1000
+        vid_fps = (BATCH_SIZE * (1 + (skipLimit if frame_num > 10 else 0))) / (t3 - t1)
         fpses.append(vid_fps)
         print('LSTCATCH=%s BATCH=%d DATA=%.2f ms/F MODL=%.2f ms/F POST=%.2f ms/F ALL=%.2f fps' % (
             "None" if len(frame_catch_pairs) == 0 else "\"Frame=%d/PersonID=%s\"" % (frame_catch_pairs[-1][0], frame_catch_pairs[-1][1].strip()),

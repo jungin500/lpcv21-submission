@@ -199,26 +199,18 @@ class Net(nn.Module):
         return sublayers
 
 if __name__ == '__main__':
-    net = Net()
-    net.eval()
+    # for inference:
+    # torch.backends.quantized.engine = 'qnnpack'
+
+    model = Net()
+    model.eval()
     
-    import time
-    
-    begin = time.time()
-    for _ in range(20):
-        net(torch.randn(4, 3, 128, 64))
-    end = time.time()
-    print("Before: Elapsed time: %dms" % ((end - begin) * 1000))
+    state_dict = torch.load('/root/submission-test/solution/deep_sort/deep_sort/deep/checkpoint/ckpt.t7', map_location=torch.device('cpu'))['net_dict']
+    model.load_state_dict(state_dict)
+    model.fuse_modules()
 
-    net.fuse_modules()
-    print(net)
-
-    begin = time.time()
-    for _ in range(20):
-        net(torch.randn(4, 3, 128, 64))
-    end = time.time()
-    print("After: Elapsed time: %dms" % ((end - begin) * 1000))
-
+    # calibrate the prepared model to determine quantization parameters for activations
+    # in a real world setting, the calibration would be done with a representative dataset
     def generate_activation_market1501():
         from glob import glob
         import os
@@ -249,14 +241,15 @@ if __name__ == '__main__':
             image_batch.append(image)
 
         image_batch = torch.cat(image_batch, dim=0)
+        print(image_batch.shape)
+        
         return image_batch
 
     input_fp32 = generate_activation_market1501()
-    net = net.quantize(input_fp32)
-    
-    print("Evaluating ...\n")
-    begin = time.time()
-    for _ in range(20):
-        net(torch.randn(4, 3, 128, 64))
-    end = time.time()
-    print("After: Elapsed time: %dms" % ((end - begin) * 1000))
+    model_int8 = model.quantize(input_fp32)
+
+    # run the model, relevant calculations will happen in int8
+    res = model_int8(input_fp32)
+
+    int8_model = torch.jit.trace(model_int8, input_fp32)
+    torch.jit.save(int8_model, 'deep_int8_model.torchscript')

@@ -11,21 +11,22 @@ class Extractor(object):
         use_torchscript = True
 
         self.device = torch.device("cuda") if torch.cuda.is_available() and use_cuda else torch.device("cpu")
+        logger = logging.getLogger("root.tracker")
 
-        if use_torchscript:
-            # torch.backends.quantized.engine = 'qnnpack'
-            model_path = 'solution/deep_sort/deep_sort/deep/deep_int8_model.torchscript'
+        if use_torchscript and self.device.type == 'cpu':  # use_cuda might always be True!
+            model_path = 'solution/deep_sort/deep_sort/deep/checkpoint/deep_int8_model.torchscript'
             self.net = torch.jit.load(model_path)
             self.net.eval()
+            logger.info("Deep: using torchscript with Quantization and Fusing")
         else:
             self.net = Net(reid=True)
             self.net.eval()
             state_dict = torch.load(model_path, map_location=lambda storage, loc: storage)['net_dict']
             self.net.load_state_dict(state_dict)
-            logger = logging.getLogger("root.tracker")
             logger.info("Loading weights from {}... Done!".format(model_path))
-    
-        self.net.to(self.device)
+            logger.info("WARNING: Not using quantize/fused deep model!")
+            self.net.to(self.device)
+
         self.size = (64, 128)
         self.means = np.expand_dims(np.expand_dims(np.array([0.485, 0.456, 0.406]), 0), 0)
         self.stds = np.expand_dims(np.expand_dims(np.array([0.229, 0.224, 0.225]), 0), 0)

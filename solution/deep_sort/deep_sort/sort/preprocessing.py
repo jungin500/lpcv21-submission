@@ -3,71 +3,50 @@ import numpy as np
 import cv2
 
 
-def non_max_suppression(boxes, max_bbox_overlap, scores=None):
-    """Suppress overlapping detections.
+def non_max_suppression(detections, max_bbox_overlap):
+    clses = [d.clses for d in detections]
+    clses_list = np.unique(clses)
 
-    Original code from [1]_ has been adapted to include confidence score.
+    picked_detections = []
+    for clsid in clses_list:
+        class_detections = list(filter(lambda d: d.clses == clsid, detections))
 
-    .. [1] http://www.pyimagesearch.com/2015/02/16/
-           faster-non-maximum-suppression-python/
+        boxes = np.array([d.tlwh for d in class_detections])
+        scores = np.array([d.confidence for d in class_detections])
+    
+        if len(boxes) == 0:
+            continue
 
-    Examples
-    --------
+        boxes = boxes.astype(np.float)
 
-        >>> boxes = [d.roi for d in detections]
-        >>> scores = [d.confidence for d in detections]
-        >>> indices = non_max_suppression(boxes, max_bbox_overlap, scores)
-        >>> detections = [detections[i] for i in indices]
+        x1 = boxes[:, 0]
+        y1 = boxes[:, 1]
+        x2 = boxes[:, 2] + boxes[:, 0]
+        y2 = boxes[:, 3] + boxes[:, 1]
 
-    Parameters
-    ----------
-    boxes : ndarray
-        Array of ROIs (x, y, width, height).
-    max_bbox_overlap : float
-        ROIs that overlap more than this values are suppressed.
-    scores : Optional[array_like]
-        Detector confidence score.
+        area = (x2 - x1 + 1) * (y2 - y1 + 1)
+        if scores is not None:
+            idxs = np.argsort(scores)
+        else:
+            idxs = np.argsort(y2)
 
-    Returns
-    -------
-    List[int]
-        Returns indices of detections that have survived non-maxima suppression.
+        while len(idxs) > 0:
+            last = len(idxs) - 1
+            i = idxs[last]
+            picked_detections.append(class_detections[i])
 
-    """
-    if len(boxes) == 0:
-        return []
+            xx1 = np.maximum(x1[i], x1[idxs[:last]])
+            yy1 = np.maximum(y1[i], y1[idxs[:last]])
+            xx2 = np.minimum(x2[i], x2[idxs[:last]])
+            yy2 = np.minimum(y2[i], y2[idxs[:last]])
 
-    boxes = boxes.astype(np.float)
-    pick = []
+            w = np.maximum(0, xx2 - xx1 + 1)
+            h = np.maximum(0, yy2 - yy1 + 1)
 
-    x1 = boxes[:, 0]
-    y1 = boxes[:, 1]
-    x2 = boxes[:, 2] + boxes[:, 0]
-    y2 = boxes[:, 3] + boxes[:, 1]
+            overlap = (w * h) / area[idxs[:last]]
 
-    area = (x2 - x1 + 1) * (y2 - y1 + 1)
-    if scores is not None:
-        idxs = np.argsort(scores)
-    else:
-        idxs = np.argsort(y2)
+            idxs = np.delete(
+                idxs, np.concatenate(
+                    ([last], np.where(overlap > max_bbox_overlap)[0])))
 
-    while len(idxs) > 0:
-        last = len(idxs) - 1
-        i = idxs[last]
-        pick.append(i)
-
-        xx1 = np.maximum(x1[i], x1[idxs[:last]])
-        yy1 = np.maximum(y1[i], y1[idxs[:last]])
-        xx2 = np.minimum(x2[i], x2[idxs[:last]])
-        yy2 = np.minimum(y2[i], y2[idxs[:last]])
-
-        w = np.maximum(0, xx2 - xx1 + 1)
-        h = np.maximum(0, yy2 - yy1 + 1)
-
-        overlap = (w * h) / area[idxs[:last]]
-
-        idxs = np.delete(
-            idxs, np.concatenate(
-                ([last], np.where(overlap > max_bbox_overlap)[0])))
-
-    return pick
+    return picked_detections
