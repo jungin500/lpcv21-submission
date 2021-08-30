@@ -15,7 +15,7 @@ class Exp(MyExp):
         # ---------------- model config ---------------- #
         self.num_classes = 2
         self.depth = 0.33
-        self.width = 0.125
+        self.width = 0.25
 
         # ---------------- dataloader config ---------------- #
         # set worker to 4 for shorter dataloader init time

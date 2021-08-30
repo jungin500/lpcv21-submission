@@ -11,6 +11,10 @@ import solution
 import track
 import time
 
+# print("WARNING: using qnnpack backend! torch might crash on PC!")
+# print("check main.py!")
+# torch.backends.quantized.engine = 'qnnpack'
+
 from yolox.utils.general import check_img_size, select_device
 
 palette = (2 ** 11 - 1, 2 ** 15 - 1, 2 ** 20 - 1)
@@ -93,7 +97,7 @@ def main(vid_src=None, grd_src=None):
     if vid_src == None and grd_src == None:
         vid_src = sys.argv[1]
         grd_src = sys.argv[2]
-    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs', '--skip-frames', '2'])
+    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs', '--skip-frames', '3', '--device', 'cpu'])
     args.img_size = check_img_size(args.img_size)
     groundtruths_path = args.groundtruths
     

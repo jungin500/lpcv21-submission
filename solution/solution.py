@@ -374,7 +374,7 @@ def update_dict_pairs(frame_num, collisions, frame_catch_pairs, skipLimit, ball_
     if (updateFrames):
         tmp = ' '.join([
             str(ball_person_pairs[color]) if color in ball_person_pairs else '0'
-            for color in ball_person_pairs
+            for color in colorOrder
             ])
         
         # tmp = ''
@@ -385,7 +385,7 @@ def update_dict_pairs(frame_num, collisions, frame_catch_pairs, skipLimit, ball_
         #         tmp = tmp + '0' + ' '
 
         if frame_num > 10:
-            frame_catch_pairs.append([frame_num - skipLimit, tmp])  # as "previous frame" will be more accurate for correct answer
+            frame_catch_pairs.append([frame_num, tmp])  # as "previous frame" will be more accurate for correct answer
         else:
             frame_catch_pairs.append([frame_num, tmp])
 
@@ -415,7 +415,7 @@ def write_catches(output_path, frame_catch_pairs, colorDict, colorOrder):
 
 
 def smooth_frame_pairs(frame_catch_pairs, colorDict):
-    max_diff = 5 
+    max_diff = 4
     size = len(frame_catch_pairs)
     num_clrs = len(colorDict)
     smooth_pairs = []

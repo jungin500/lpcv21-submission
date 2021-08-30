@@ -1,0 +1,24 @@
+Target 4p1b_01A2: Time: 27sec, Accuracy 82.1%
+Target 5p2b_01A1: Time: 63sec, Accuracy 22.7%
+Target 5p4b_01A2: Time: 32sec, Accuracy 69.7%
+Target 5p5b_03A1: Time: 36sec, Accuracy 26.0%
+Target 7p3b_02M: Time: 75sec, Accuracy 6.7%
+
+Target 4p1b_01A2: Time: 0sec, Accuracy 82.1%
+Target 5p2b_01A1: Time: 0sec, Accuracy 22.7%
+Target 5p4b_01A2: Time: 0sec, Accuracy 69.7%
+Target 5p5b_03A1: Time: 0sec, Accuracy 26.0%
+Target 7p3b_02M: Time: 0sec, Accuracy 6.7%
+
+Target 4p1b_01A2: Time: 42sec, Accuracy 82.1%
+Target 5p2b_01A1: Time: 112sec, Accuracy 22.7%
+Target 5p4b_01A2: Time: 58sec, Accuracy 69.7%
+Target 5p5b_03A1: Time: 57sec, Accuracy 26.0%
+Target 7p3b_02M: Time: 162sec, Accuracy 6.2%
+Target 4p1b_01A2: Time: 1sec, Accuracy 82.1%
+Target 4p1b_01A2: Time: 4sec, Accuracy 82.1%
+Target 4p1b_01A2: Time: 31sec, Accuracy 53.6%
+Target 4p1b_01A2: Time: 32sec, Accuracy 53.6%
+Target 5p2b_01A1: Time: 101sec, Accuracy 29.5%
+Target 4p1b_01A2: Time: 32sec, Accuracy 75.0%
+Target 5p2b_01A1: Time: 101sec, Accuracy 27.3%

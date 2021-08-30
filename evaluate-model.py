@@ -19,9 +19,10 @@ def bbox_rel(image_width, image_height,  *xyxy):
     return x_c, y_c, w, h
 
 if __name__ == '__main__':
+    args = sys.argv
 
-    video_path = r'..\videos\7p3b_02M\7p3b_02M.m4v'
-    gt_path = r'..\videos\7p3b_02M\7p3b_02M.csv'
+    video_path = args[1]
+    gt_path = args[2]
     
     EXP_PATH = 'solution/yolox/exps/custom/model_yj.py'
     CHECKPOINT_PATH = 'solution/yolox/weights/best_ckpt.pth'

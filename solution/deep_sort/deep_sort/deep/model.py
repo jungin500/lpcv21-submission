@@ -241,7 +241,6 @@ if __name__ == '__main__':
             image_batch.append(image)
 
         image_batch = torch.cat(image_batch, dim=0)
-        print(image_batch.shape)
         
         return image_batch
 
