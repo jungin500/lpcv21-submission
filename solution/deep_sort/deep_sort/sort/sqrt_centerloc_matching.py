@@ -4,7 +4,7 @@ import numpy as np
 from . import linear_assignment
 
 
-def iou(bbox, candidates):
+def centerloc(bbox, candidates, img_width, img_height):
     """Computer intersection over union.
 
     Parameters
@@ -23,25 +23,19 @@ def iou(bbox, candidates):
         occluded by the candidate.
 
     """
-    bbox_tl, bbox_br = bbox[:2], bbox[:2] + bbox[2:]
-    candidates_tl = candidates[:, :2]
-    candidates_br = candidates[:, :2] + candidates[:, 2:]
+    bbox_cl = bbox[:2] + bbox[2:] / 2
+    bbox_cl = bbox_cl / np.array([img_width, img_height])
+    # bbox_cl = np.sqrt(bbox_cl)
+    candidates_cl = candidates[:, :2] + candidates[:, 2:] / 2
+    candidates_cl = bbox_cl / np.expand_dims(np.array([img_width, img_height]), 0)
+    # candidates_cl = np.sqrt(candidates_cl)
 
-    tl = np.c_[np.maximum(bbox_tl[0], candidates_tl[:, 0])[:, np.newaxis],
-               np.maximum(bbox_tl[1], candidates_tl[:, 1])[:, np.newaxis]]
-    br = np.c_[np.minimum(bbox_br[0], candidates_br[:, 0])[:, np.newaxis],
-               np.minimum(bbox_br[1], candidates_br[:, 1])[:, np.newaxis]]
-    wh = np.maximum(0., br - tl)
-
-    area_intersection = wh.prod(axis=1)
-    area_bbox = bbox[2:].prod()
-    area_candidates = candidates[:, 2:].prod(axis=1)
-    return area_intersection / (area_bbox + area_candidates - area_intersection)
+    return np.array([1 - np.sqrt(np.linalg.norm(candidate - bbox_cl)) for candidate in candidates_cl])
 
 
-def iou_cost(tracks, detections, track_indices=None,
+def centerloc_cost(tracks, detections, img_width, img_height, track_indices=None,
              detection_indices=None):
-    """An intersection over union distance metric.
+    """An squared centerlocation distance metric.
 
     Parameters
     ----------
@@ -76,9 +70,7 @@ def iou_cost(tracks, detections, track_indices=None,
             continue
 
         bbox = tracks[track_idx].to_tlwh()
+        # candidates = np.asarray([detections[i].tlwh for i in detection_indices])
         candidates = np.asarray([detections[i].tlwh for i in detection_indices])
-        cost_matrix[row, :] = 1. - iou(bbox, candidates)
-        # print('bbox', bbox)
-        # print('candidates', candidates)
-        # print('iou result', iou(bbox, candidates))
+        cost_matrix[row, :] = 1. - centerloc(bbox, candidates, img_width, img_height)
     return cost_matrix

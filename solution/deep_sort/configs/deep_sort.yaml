@@ -1,6 +1,6 @@
 DEEPSORT:
   REID_CKPT: 'deep_sort/deep_sort/deep/checkpoint/ckpt.t7' # "weights/deepsort-deep-checkpoint.t7"
-  MAX_DIST: 0.9 # 최대 Cosine Distance
+  MAX_DIST: 1.5 # 최대 Cosine Distance
   MIN_CONFIDENCE: 0.4 # Deep의 출력 bbox confidence의 NMS에서 사용
   NMS_MAX_OVERLAP: 1.0 # 원래는 0.75지만 공이 사람안에 있을때도 잡아야해서 일단은 비활성화(1.0)
   MAX_IOU_DISTANCE: 1.0 #0.7

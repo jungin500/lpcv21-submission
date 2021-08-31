@@ -20,6 +20,7 @@ sys.path.insert(0, dir_path+'/yolov5')
 from yolox.data.datasets.lpcvloader import LoadImages
 from deep_sort.utils.parser import get_config
 from deep_sort.deep_sort import DeepSort
+from tracker import CenterBasedBallPersonTracker
 
 import time
 import yaml
@@ -78,13 +79,43 @@ def detect(opt, device, half, colorDict, save_img=False):
     cfg.merge_from_file(opt.config_deepsort)
 
     labels = solution.load_labels(groundtruths_path, 0, 0, -1)
-    ids = labels['ID'].unique()
+
+    ids = sorted(labels['ID'].unique())
     tracker_max_tracks = len(ids)
 
-    deepsort = DeepSort(dir_path + '/' + cfg.DEEPSORT.REID_CKPT,
+    import pandas as pd
+
+    groupped_labels = labels[['Class', 'ID']].groupby(['ID']).agg({'Class': pd.Series.unique})
+    tracker_ids = np.expand_dims(groupped_labels.index.to_numpy(), 0).T
+    class_ids = groupped_labels.to_numpy()
+
+    tracker_max_people_tracks = (class_ids == 0).sum()
+    # groupped_ids = np.concatenate([tracker_ids, class_ids], axis=1)
+    # print('groupped_ids', groupped_ids)
+
+    cap = cv2.VideoCapture(source)
+    if not cap.isOpened():
+        print("Couldn't open source!")
+        sys.exit(1)
+
+    img_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+    img_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+    cap.release()
+
+    print("Input video: %dx%d" % (img_width, img_height))
+    del cap
+
+    deepsort = DeepSort(dir_path + '/' + cfg.DEEPSORT.REID_CKPT, img_width, img_height,
                         max_dist=cfg.DEEPSORT.MAX_DIST, min_confidence=cfg.DEEPSORT.MIN_CONFIDENCE, 
                         nms_max_overlap=cfg.DEEPSORT.NMS_MAX_OVERLAP, max_iou_distance=cfg.DEEPSORT.MAX_IOU_DISTANCE, 
                         max_tracks=tracker_max_tracks, max_age=cfg.DEEPSORT.MAX_AGE, n_init=cfg.DEEPSORT.N_INIT, nn_budget=cfg.DEEPSORT.NN_BUDGET, use_cuda=True)
+
+    # tracker_ball_max_tracks = (class_ids == 1).sum()
+    # tracker_person_max_tracks = (class_ids == 0).sum()
+    # slb_tracker = CenterBasedBallPersonTracker(
+    #     dir_path + '/' + cfg.DEEPSORT.REID_CKPT,
+    #     ball_tracks=tracker_ball_max_tracks, person_tracks=tracker_person_max_tracks
+    # )
 
     # Initialize
     if not os.path.exists(out):
@@ -210,12 +241,14 @@ def detect(opt, device, half, colorDict, save_img=False):
 
                 if (groundtruths.shape[0]==0):
                     outputs = deepsort.update(xywhs, confs, clses, im0s)
+                    # _ = slb_tracker.update(xywhs, confs, clses, im0s)
                 else:
                     xywhs = groundtruths[:,2:]
                     tensor = torch.tensor((), dtype=torch.int32)
                     confs = tensor.new_ones((groundtruths.shape[0], 1))
                     clses = groundtruths[:,0:1]
                     outputs = deepsort.update(xywhs, confs, clses, im0s)
+                    # _ = slb_tracker.update(xywhs, confs, clses, im0s)
                 
                 if frame_num >= 2:
                     for real_ID in groundtruths.tolist():
@@ -242,6 +275,7 @@ def detect(opt, device, half, colorDict, save_img=False):
                                 id_mapping[det_obj_id] = int(r_obj_id)
             else:
                 outputs = deepsort.update(xywhs, confs, clses, im0s)
+                # _ = slb_tracker.update(xywhs, confs, clses, im0s)
 
             # draw boxes for visualization
             if len(outputs) > 0:

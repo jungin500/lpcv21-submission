@@ -4,6 +4,7 @@ import numpy as np
 from . import kalman_filter
 from . import linear_assignment
 from . import iou_matching
+from . import sqrt_centerloc_matching
 from .track import Track
 
 
@@ -37,12 +38,14 @@ class Tracker:
 
     """
 
-    def __init__(self, metric, max_iou_distance=0.7, max_age=70, max_tracks=100, n_init=3):
+    def __init__(self, metric, img_width, img_height, max_iou_distance=0.7, max_age=70, max_tracks=100, n_init=3):
         self.metric = metric
         self.max_iou_distance = max_iou_distance
         self.max_age = max_age
         self.n_init = n_init
         self.max_tracks = max_tracks
+        self.img_width = img_width
+        self.img_height = img_height
 
         self.kf = kalman_filter.KalmanFilter()
         self.tracks = []
@@ -86,13 +89,15 @@ class Tracker:
                 btid = self._initiate_track(detections[detection_idx], 5)
                 # print("Initiated new ball track", btid)
                 continue
-
+            
+            # Add new track ONLY if it didn't reached max people tracks
             if self.max_tracks > len(self.tracks):
                 _ = self._initiate_track(detections[detection_idx])
             else:
-                print("Couldn't initiate new track; dropped: Detection[tlwh=%s, confidence=%f, clses=%d]" % (
-                    str(detections[detection_idx].tlwh), detections[detection_idx].confidence, detections[detection_idx].clses
-                ))
+                pass
+                # print("Couldn't initiate new track; dropped: Detection[tlwh=%s, confidence=%f, clses=%d]" % (
+                #     str(detections[detection_idx].tlwh), detections[detection_idx].confidence, detections[detection_idx].clses
+                # ))
         
         # Remove ball detections as it's already initiated
         unmatched_detections = [d for d in unmatched_detections if detections[d].clses == 0]
@@ -105,7 +110,7 @@ class Tracker:
         if len(matches) > 0 and len(unmatched_detections) > 0:
             pre_matched_detection_idxs = [ m[0] for m in matches ]
             re_matches, _, _ = self._rematch([detections[i] for i in unmatched_detections])
-            print("Rematch result: ", re_matches)
+            # print("Rematch result: ", re_matches)
 
         # Update track set.
         for track_idx, detection_idx in matches:
@@ -128,9 +133,9 @@ class Tracker:
                     self.kf, detections[detection_idx])
             else:
                 pass
-                print("Finally skipping after re-match; dropped: Detection[tlwh=%s, confidence=%f, clses=%d]" % (
-                    str(detections[detection_idx].tlwh), detections[detection_idx].confidence, detections[detection_idx].clses
-                ))
+                # print("Finally skipping after re-match; dropped: Detection[tlwh=%s, confidence=%f, clses=%d]" % (
+                #     str(detections[detection_idx].tlwh), detections[detection_idx].confidence, detections[detection_idx].clses
+                # ))
 
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
 
@@ -148,7 +153,7 @@ class Tracker:
 
     def _match(self, detections):
 
-        def gated_metric(tracks, dets, track_indices, detection_indices):
+        def gated_metric(tracks, dets, img_width, img_height, track_indices, detection_indices):
             features = np.array([dets[i].feature for i in detection_indices])
             targets = np.array([tracks[i].track_id for i in track_indices])
             cost_matrix = self.metric.distance(features, targets)
@@ -167,11 +172,23 @@ class Tracker:
         # Associate confirmed tracks using appearance features.
         matches_a, unmatched_tracks_a, unmatched_detections = \
             linear_assignment.matching_cascade(
-                gated_metric, self.metric.matching_threshold, self.max_age,
+                gated_metric, self.metric.matching_threshold, self.img_width, self.img_height, self.max_age,
                 self.tracks, detections, confirmed_tracks)
 
-        # Associate remaining tracks together with unconfirmed tracks using IOU.
-        iou_track_candidates = unconfirmed_tracks + [
+        # # Associate remaining tracks together with unconfirmed tracks using IOU.
+        # iou_track_candidates = unconfirmed_tracks + [
+        #     k for k in unmatched_tracks_a if
+        #     self.tracks[k].time_since_update == 1]
+        # unmatched_tracks_a = [
+        #     k for k in unmatched_tracks_a if
+        #     self.tracks[k].time_since_update != 1]
+        # matches_b, unmatched_tracks_b, unmatched_detections = \
+        #     linear_assignment.min_cost_matching(
+        #         iou_matching.iou_cost, self.max_iou_distance, self.tracks,
+        #         detections, iou_track_candidates, unmatched_detections)
+
+        # Associate remaining tracks together with unconfirmed tracks using Sqrted Centerloc.
+        centerloc_track_candidates = unconfirmed_tracks + [
             k for k in unmatched_tracks_a if
             self.tracks[k].time_since_update == 1]
         unmatched_tracks_a = [
@@ -179,15 +196,15 @@ class Tracker:
             self.tracks[k].time_since_update != 1]
         matches_b, unmatched_tracks_b, unmatched_detections = \
             linear_assignment.min_cost_matching(
-                iou_matching.iou_cost, self.max_iou_distance, self.tracks,
-                detections, iou_track_candidates, unmatched_detections)
+                sqrt_centerloc_matching.centerloc_cost, 1.0, self.img_width, self.img_height, self.tracks,
+                detections, centerloc_track_candidates, unmatched_detections)
 
         matches = matches_a + matches_b
         unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))
         return matches, unmatched_tracks, unmatched_detections
 
     def _rematch(self, detections):
-        def gated_metric(tracks, dets, track_indices, detection_indices):
+        def gated_metric(tracks, dets, img_width, img_height, track_indices, detection_indices):
             features = np.array([dets[i].feature for i in detection_indices])
             targets = np.array([tracks[i].track_id for i in track_indices])
             cost_matrix = self.metric.distance(features, targets)
@@ -207,11 +224,11 @@ class Tracker:
         # previously 0.2
         matches_a, unmatched_tracks_a, unmatched_detections = \
             linear_assignment.matching_cascade(
-                gated_metric, 100, self.max_age,
+                gated_metric, 100, self.img_width, self.img_height, self.max_age,
                 self.tracks, detections, confirmed_tracks)
 
         # Associate remaining tracks together with unconfirmed tracks using IOU.
-        iou_track_candidates = unconfirmed_tracks + [
+        centerloc_track_candidates = unconfirmed_tracks + [
             k for k in unmatched_tracks_a if
             self.tracks[k].time_since_update == 1]
         unmatched_tracks_a = [
@@ -219,8 +236,8 @@ class Tracker:
             self.tracks[k].time_since_update != 1]
         matches_b, unmatched_tracks_b, unmatched_detections = \
             linear_assignment.min_cost_matching(
-                iou_matching.iou_cost, self.max_iou_distance, self.tracks,
-                detections, iou_track_candidates, unmatched_detections)
+                sqrt_centerloc_matching.centerloc_cost, 1.0, self.img_width, self.img_height, self.tracks,
+                detections, centerloc_track_candidates, unmatched_detections)
 
         matches = matches_a + matches_b
         unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))

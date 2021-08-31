@@ -14,7 +14,7 @@ __all__ = ['DeepSort']
 
 
 class DeepSort(object):
-    def __init__(self, model_path, max_dist=0.2, min_confidence=0.3, nms_max_overlap=1.0, max_iou_distance=0.7, max_age=70, n_init=3, nn_budget=100, max_tracks=100, use_cuda=True):
+    def __init__(self, model_path, img_width, img_height, max_dist=0.2, min_confidence=0.3, nms_max_overlap=1.0, max_iou_distance=0.7, max_age=70, n_init=3, nn_budget=100, max_tracks=100, use_cuda=True):
         self.min_confidence = min_confidence
         self.nms_max_overlap = nms_max_overlap
 
@@ -23,7 +23,7 @@ class DeepSort(object):
         max_cosine_distance = max_dist
         nn_budget = 100
         metric = NearestNeighborDistanceMetric("cosine", max_cosine_distance, nn_budget)
-        self.tracker = Tracker(metric, max_iou_distance=max_iou_distance, max_age=max_age, max_tracks=max_tracks, n_init=n_init)
+        self.tracker = Tracker(metric, img_width, img_height, max_iou_distance=max_iou_distance, max_age=max_age, max_tracks=max_tracks, n_init=n_init)
 
     def update(self, bbox_xywh, confidences, clses, ori_img):
         self.height, self.width = ori_img.shape[:2]
