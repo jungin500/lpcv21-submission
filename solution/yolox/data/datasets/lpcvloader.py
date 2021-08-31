@@ -142,8 +142,11 @@ class BackgroundCv2Thread(Thread):
 
     def read(self):
         while self.is_alive() and len(self.buffer) == 0:
-            time.sleep(0.01)
+            time.sleep(0.001)
         return (False, None) if len(self.buffer) == 0 else (True, self.buffer.pop(0))
+
+    def grab(self):
+        return self.read()
 
     def release(self):
         self.run_flag = False
@@ -160,11 +163,11 @@ class BackgroundCv2Thread(Thread):
                     break
                 self.buffer.append(frame)
             else:
-                time.sleep(0.01)
+                time.sleep(0.001)
 
         self.cap.release()
 
-class LoadImages:  # for inference
+class LoadImages(Dataset):  # for inference
     def __init__(self, path, img_size=640, batch_size=1, stride=32, skip_frames=0, multithreaded=False):
         p = str(Path(path).absolute())  # os-agnostic absolute path
         if '*' in p:
@@ -221,7 +224,6 @@ class LoadImages:  # for inference
                 ret_val, img0 = self.cap.read()
                 if self.frame > 10:
                     [self.cap.grab() for _ in range(self.interleave_fps)]
-                print("FR=%d" % (int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))), end=' ')
 
                 img0s.append(img0)
                 if not ret_val:

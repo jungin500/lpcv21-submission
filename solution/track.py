@@ -11,6 +11,7 @@ import torch
 import torch.backends.cudnn as cudnn
 from numpy import random
 import numpy as np
+import pandas as pd
 
 # https://github.com/pytorch/pytorch/issues/3678
 import sys
@@ -83,8 +84,6 @@ def detect(opt, device, half, colorDict, save_img=False):
     ids = sorted(labels['ID'].unique())
     tracker_max_tracks = len(ids)
 
-    import pandas as pd
-
     groupped_labels = labels[['Class', 'ID']].groupby(['ID']).agg({'Class': pd.Series.unique})
     tracker_ids = np.expand_dims(groupped_labels.index.to_numpy(), 0).T
     class_ids = groupped_labels.to_numpy()
@@ -126,22 +125,30 @@ def detect(opt, device, half, colorDict, save_img=False):
     CHECKPOINT_PATH = 'solution/yolox/weights/best_ckpt.pth'
     BATCH_SIZE = 4
 
+    YOLOX_USE_QUANTIZED = False
+
     exp = get_exp(EXP_PATH, None)
     # exp.test_conf = 0.25
     # exp.nmsthre = 0.75
     # exp.test_size = (416, 416)
     model = exp.get_model()
     model.eval()
-    
-    # Load weight from checkpoint
-    ckpt = torch.load(CHECKPOINT_PATH, map_location=device)
-    model.load_state_dict(ckpt['model'])
 
-    # Fuse model for optimized inference
-    # model = fuse_model(model)
-    model.to(device)
+    if YOLOX_USE_QUANTIZED:
+        # First fuse the model's modules
+        model.fuse_modules()
+        
+        print("Backbone quantization done")
+    else:
+        # Load weight from checkpoint
+        ckpt = torch.load(CHECKPOINT_PATH, map_location=device)
+        model.load_state_dict(ckpt['model'])
 
-    model = fuse_model(model)
+        # Fuse model for optimized inference
+        # model = fuse_model(model)
+        model.to(device)
+
+        model = fuse_model(model)
 
     # torch.backends.quantized.engine = 'qnnpack'
     # model.qconfig = torch.quantization.get_default_qconfig('qnnpack')
@@ -342,7 +349,6 @@ def detect(opt, device, half, colorDict, save_img=False):
                 frame_num += skipLimit
                 frame_num += interleave_frames * (1 + skipLimit)
             frame_num += 1
-            print("FR-DISP=%d" % frame_num, end=' ')
         
         t3 = time_synchronized()
         
