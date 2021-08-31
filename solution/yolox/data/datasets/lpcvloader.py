@@ -221,6 +221,7 @@ class LoadImages:  # for inference
                 ret_val, img0 = self.cap.read()
                 if self.frame > 10:
                     [self.cap.grab() for _ in range(self.interleave_fps)]
+                print("FR=%d" % (int(self.cap.get(cv2.CAP_PROP_POS_FRAMES))), end=' ')
 
                 img0s.append(img0)
                 if not ret_val:

@@ -338,9 +338,11 @@ def detect(opt, device, half, colorDict, save_img=False):
 
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), vid_fps, (vid_width, vid_height))
                     vid_writer.write(im0s)
-            if frame_num > 10:
-                frame_num += skipLimit + interleave_frames
+            if (frame_num // BATCH_SIZE) * BATCH_SIZE > 10:
+                frame_num += skipLimit
+                frame_num += interleave_frames * (1 + skipLimit)
             frame_num += 1
+            print("FR-DISP=%d" % frame_num, end=' ')
         
         t3 = time_synchronized()
         
