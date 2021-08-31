@@ -3,6 +3,7 @@
 # Copyright (c) 2014-2021 Megvii Inc. All rights reserved.
 
 import math
+from loguru import logger
 
 import torch
 import torch.nn as nn
@@ -56,13 +57,6 @@ class YOLOXHead(nn.Module):
             self.cls_convs.append(
                 nn.Sequential(
                     *[
-                        # Conv(
-                        #     in_channels=int(256 * width),
-                        #     out_channels=int(256 * width),
-                        #     ksize=3,
-                        #     stride=1,
-                        #     act=act,
-                        # ),
                         Conv(
                             in_channels=int(256 * width),
                             out_channels=int(256 * width),
@@ -70,19 +64,19 @@ class YOLOXHead(nn.Module):
                             stride=1,
                             act=act,
                         ),
+                        # Conv(
+                        #     in_channels=int(256 * width),
+                        #     out_channels=int(256 * width),
+                        #     ksize=3,
+                        #     stride=1,
+                        #     act=act,
+                        # ),
                     ]
                 )
             )
             self.reg_convs.append(
                 nn.Sequential(
                     *[
-                        # Conv(
-                        #     in_channels=int(256 * width),
-                        #     out_channels=int(256 * width),
-                        #     ksize=3,
-                        #     stride=1,
-                        #     act=act,
-                        # ),
                         Conv(
                             in_channels=int(256 * width),
                             out_channels=int(256 * width),
@@ -90,6 +84,13 @@ class YOLOXHead(nn.Module):
                             stride=1,
                             act=act,
                         ),
+                        # Conv(
+                        #     in_channels=int(256 * width),
+                        #     out_channels=int(256 * width),
+                        #     ksize=3,
+                        #     stride=1,
+                        #     act=act,
+                        # ),
                     ]
                 )
             )
@@ -326,7 +327,7 @@ class YOLOXHead(nn.Module):
                         imgs,
                     )
                 except RuntimeError:
-                    print(
+                    logger.error(
                         "OOM RuntimeError is raised due to the huge memory cost during label assignment. \
                            CPU mode is applied in this batch. If you want to avoid this issue, \
                            try to reduce the batch size or image size."
