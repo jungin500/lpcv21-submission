@@ -93,7 +93,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     # Load model (YOLOX)
     EXP_PATH = 'solution/yolox/exps/custom/model_yj.py'
     CHECKPOINT_PATH = 'solution/yolox/weights/best_ckpt.pth'
-    BATCH_SIZE=4
+    BATCH_SIZE = 4
 
     exp = get_exp(EXP_PATH, None)
     # exp.test_conf = 0.25
@@ -126,6 +126,7 @@ def detect(opt, device, half, colorDict, save_img=False):
     # Set Dataloader
     vid_path, vid_writer = None, None
     dataset = LoadImages(source, img_size=imgsz, batch_size=BATCH_SIZE, skip_frames=skipLimit, stride=stride, multithreaded=False)
+    interleave_frames = dataset.interleave_fps
 
     # Get names and colors
     # names = model.module.names if hasattr(model, 'module') else model.names
@@ -269,11 +270,11 @@ def detect(opt, device, half, colorDict, save_img=False):
 
                 # print("Not on Mapped ID list: ", unknown_id_list)
 
-                collisions, bbox_strings, frame_catch_pairs, ball_person_pairs = solution.detect_catches(im0s, bbox_xyxy, clses, mapped_id_list, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, prev_collisions, skipLimit, save_img)
+                collisions, detect_status, frame_catch_pairs, ball_person_pairs = solution.detect_catches(im0s, bbox_xyxy, clses, mapped_id_list, frame_num, colorDict, frame_catch_pairs, ball_person_pairs, colorOrder, prev_collisions, skipLimit, save_img)
                 prev_collisions = collisions
 
                 if save_img or view_img:
-                    main.draw_boxes(im0s, bbox_xyxy, [names[i] if i < len(names) else 'Unknown' for i in clses], scores, bbox_strings, id_mapping, identities)
+                    main.draw_boxes(im0s, bbox_xyxy, [names[i] if i < len(names) else 'Unknown' for i in clses], scores, detect_status, id_mapping, identities)
             
             # Stream results
             if view_img:
@@ -304,7 +305,7 @@ def detect(opt, device, half, colorDict, save_img=False):
                         vid_writer = cv2.VideoWriter(save_path, cv2.VideoWriter_fourcc(*opt.fourcc), vid_fps, (vid_width, vid_height))
                     vid_writer.write(im0s)
             if frame_num > 10:
-                frame_num += skipLimit
+                frame_num += skipLimit + interleave_frames
             frame_num += 1
         
         t3 = time_synchronized()

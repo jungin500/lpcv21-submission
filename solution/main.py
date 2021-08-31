@@ -49,7 +49,7 @@ def compute_color_for_labels(label):
     return tuple(color)
 
 
-def draw_boxes(img, bbox, cls_names, scores, ball_detect, id_mapping, identities=None, offset=(0,0)):
+def draw_boxes(img, bbox, cls_names, scores, detect_status, id_mapping, identities=None, offset=(0,0)):
     for i, box in enumerate(bbox):
         x1, y1, x2, y2 = [int(i) for i in box]
         x1 += offset[0]
@@ -63,7 +63,7 @@ def draw_boxes(img, bbox, cls_names, scores, ball_detect, id_mapping, identities
             id = int(identities[i]) if identities is not None else 0    
             
         color = compute_color_for_labels(id)
-        label = '%s %d %s %d' % (ball_detect[i], id, cls_names[i], scores[i])
+        label = '%s %d(->%d) %s %d' % (detect_status[i], id, identities[i], cls_names[i], scores[i])
         label += '%'
         t_size = cv2.getTextSize(label, cv2.FONT_HERSHEY_PLAIN, 2 , 2)[0]
         cv2.rectangle(img, (x1, y1),(x2,y2), color, 3)
@@ -105,7 +105,7 @@ def main(vid_src=None, grd_src=None):
     if vid_src == None and grd_src == None:
         vid_src = sys.argv[1]
         grd_src = sys.argv[2]
-    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs', '--skip-frames', '3', '--device', 'cpu'])
+    args = parser.parse_args(args=['--source', vid_src, '--groundtruths', grd_src, '--output', './outputs', '--skip-frames', '2'])
     args.img_size = check_img_size(args.img_size)
     groundtruths_path = args.groundtruths
     

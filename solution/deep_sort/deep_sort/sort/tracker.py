@@ -69,9 +69,7 @@ class Tracker:
         matches, unmatched_tracks, unmatched_detections = \
             self._match(detections)
 
-        # print('matches', matches)
-        # print('unmatched_tracks', unmatched_tracks)
-        # print('unmatched_detections', unmatched_detections)
+        # print('matches', matches, ', unmatched_tracks', unmatched_tracks, ', unmatched_detections', unmatched_detections)
 
         # Move invalid class ids to unmatched detections
         def determine_class_ids(matches_tuple):
@@ -83,18 +81,31 @@ class Tracker:
 
         matches = [m for m in matches if determine_class_ids(m)]
         
-        for detection_idx in unmatched_detections:
-            if self.max_tracks > len(self.tracks) or \
-                detections[detection_idx].clses == 1:  # only except ball detections
+        for detection_idx in unmatched_detections:  # only except ball detections
+            if detections[detection_idx].clses == 1:
+                btid = self._initiate_track(detections[detection_idx], 5)
+                # print("Initiated new ball track", btid)
+                continue
+
+            if self.max_tracks > len(self.tracks):
                 _ = self._initiate_track(detections[detection_idx])
+            else:
+                print("Couldn't initiate new track; dropped: Detection[tlwh=%s, confidence=%f, clses=%d]" % (
+                    str(detections[detection_idx].tlwh), detections[detection_idx].confidence, detections[detection_idx].clses
+                ))
+        
+        # Remove ball detections as it's already initiated
+        unmatched_detections = [d for d in unmatched_detections if detections[d].clses == 0]
 
         # Rematch unmatched detections
         # Do not add new track on unmatched detections -
         # just rematch with existing tracks.
         # (only if tracks are fully initialized)
-        if len(matches) > 0:
-            pre_matched_detection_idxs = [ m[1] for m in matches ]
+        re_matches = []
+        if len(matches) > 0 and len(unmatched_detections) > 0:
+            pre_matched_detection_idxs = [ m[0] for m in matches ]
             re_matches, _, _ = self._rematch([detections[i] for i in unmatched_detections])
+            print("Rematch result: ", re_matches)
 
         # Update track set.
         for track_idx, detection_idx in matches:
@@ -109,16 +120,17 @@ class Tracker:
 
         # Additionally update re-matched tracks.
         # (Also, only if tracks are fully initialized)
-        if len(matches) > 0:
-            for track_idx, detection_idx in re_matches:
-                # Do not update when lower-distance one (above) is already updated
-                if track_idx not in pre_matched_detection_idxs and \
-                    self.tracks[track_idx].cls == detections[detection_idx].clses:
-                    self.tracks[track_idx].update(
-                        self.kf, detections[detection_idx])
-                else:
-                    pass
-                    # print("Skipping re-match")
+        for track_idx, detection_idx in re_matches:
+            # Do not update when lower-distance one (above) is already updated
+            if track_idx not in pre_matched_detection_idxs and \
+                self.tracks[track_idx].cls == detections[detection_idx].clses:
+                self.tracks[track_idx].update(
+                    self.kf, detections[detection_idx])
+            else:
+                pass
+                print("Finally skipping after re-match; dropped: Detection[tlwh=%s, confidence=%f, clses=%d]" % (
+                    str(detections[detection_idx].tlwh), detections[detection_idx].confidence, detections[detection_idx].clses
+                ))
 
         self.tracks = [t for t in self.tracks if not t.is_deleted()]
 
@@ -214,13 +226,14 @@ class Tracker:
         unmatched_tracks = list(set(unmatched_tracks_a + unmatched_tracks_b))
         return matches, unmatched_tracks, unmatched_detections
 
-    def _initiate_track(self, detection):
+    def _initiate_track(self, detection, max_age_override=None):
         mean, covariance = self.kf.initiate(detection.to_xyah())
         cls = detection.clses
         score = detection.confidence
         # print("New Track %d" % self._next_id)
         self.tracks.append(Track(
-            mean, covariance, self._next_id, self.n_init, self.max_age, cls, score, 
-            detection.feature))
+            mean, covariance, self._next_id, self.n_init,
+            max_age_override if max_age_override is not None else self.max_age,
+            cls, score, detection.feature))
         self._next_id += 1
         return (self._next_id-1)
