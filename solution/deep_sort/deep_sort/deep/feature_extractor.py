@@ -8,13 +8,13 @@ from .model import Net
 
 class Extractor(object):
     def __init__(self, model_path, use_cuda=True):
-        use_torchscript = True
+        use_quantized_model = True
 
         self.device = torch.device("cuda") if torch.cuda.is_available() and use_cuda else torch.device("cpu")
         logger = logging.getLogger("root.tracker")
 
-        if use_torchscript and self.device.type == 'cpu':  # use_cuda might always be True!
-            model_path = 'solution/deep_sort/deep_sort/deep/checkpoint/deep_int8_model.torchscript'
+        if use_quantized_model and self.device.type == 'cpu':  # use_cuda might always be True!
+            model_path = 'solution/deep_sort/deep_sort/deep/checkpoint/deep_lighterweight_qat_int8_model.torchscript'
             self.net = torch.jit.load(model_path)
             self.net.eval()
             logger.info("Deep: using torchscript with Quantization and Fusing")

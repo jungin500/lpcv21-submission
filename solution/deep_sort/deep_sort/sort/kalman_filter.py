@@ -49,7 +49,7 @@ class KalmanFilter(object):
         # Motion and observation uncertainty are chosen relative to the current
         # state estimate. These weights control the amount of uncertainty in
         # the model. This is a bit hacky.
-        self._std_weight_position = 1. / 20
+        self._std_weight_position = 1. / 2
         self._std_weight_velocity = 1. / 160
 
     def initiate(self, measurement):
@@ -179,10 +179,17 @@ class KalmanFilter(object):
             (chol_factor, lower), np.dot(covariance, self._update_mat.T).T,
             check_finite=False).T
         innovation = measurement - projected_mean
-
+        
         new_mean = mean + np.dot(innovation, kalman_gain.T)
         new_covariance = covariance - np.linalg.multi_dot((
             kalman_gain, projected_cov, kalman_gain.T))
+
+        # preserve mean's original bbox width, height
+        # init_mean, init_covariance = self.initiate(measurement)
+        # new_mean = init_mean
+        # new_covariance = init_covariance
+        # print('new_mean', new_mean)
+
         return new_mean, new_covariance
 
     def gating_distance(self, mean, covariance, measurements,

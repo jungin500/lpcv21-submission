@@ -112,7 +112,11 @@ class DeepSort(object):
             im = ori_img[y1:y2,x1:x2]
             im_crops.append(im)
         if im_crops:
+            t1 = time.time()
             features = self.extractor(im_crops)
+            t2 = time.time()
+
+            print("DS: %dms" % ((t2 - t1) * 1000), end=' ')
         else:
             features = np.array([])
         return features

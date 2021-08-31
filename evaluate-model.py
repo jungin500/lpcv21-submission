@@ -43,9 +43,13 @@ if __name__ == '__main__':
     predictor = Predictor(model, exp, BALLPERSON_CLASSES, device.type, False)
 
     cap = cv2.VideoCapture(video_path)
+    fps = round(cap.get(cv2.CAP_PROP_FPS))
     
     while True:
         ret, frame = cap.read()
+        if fps == 60:
+            cap.grab()
+            
         if not ret:
             print("EOF")
             break

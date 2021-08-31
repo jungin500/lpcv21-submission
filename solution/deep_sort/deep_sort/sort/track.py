@@ -68,6 +68,8 @@ class Track:
                  feature=None):
         self.mean = mean
         self.covariance = covariance
+        self.next_mean = None
+        self.next_covariance = None
         self.track_id = track_id
         self.hits = 1
         self.age = 1
@@ -123,7 +125,7 @@ class Track:
             The Kalman filter.
 
         """
-        self.mean, self.covariance = kf.predict(self.mean, self.covariance)
+        self.next_mean, self.next_covariance = kf.predict(self.mean, self.covariance)
         self.age += 1
         self.time_since_update += 1
 
@@ -140,7 +142,7 @@ class Track:
 
         """
         self.mean, self.covariance = kf.update(
-            self.mean, self.covariance, detection.to_xyah())
+            self.next_mean, self.next_covariance, detection.to_xyah())
         self.features.append(detection.feature)
         self.cls = detection.clses
         self.score = detection.confidence

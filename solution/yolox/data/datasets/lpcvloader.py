@@ -182,6 +182,7 @@ class LoadImages:  # for inference
 
         self.multithreaded = multithreaded
         self.skip_frames = skip_frames
+        self.interleave_fps = 0
         self.batch_size = batch_size
         self.img_size = img_size
         self.stride = stride
@@ -214,10 +215,12 @@ class LoadImages:  # for inference
                 # Skip n frame from VideoCapture
                 # but do not skip first 10 frame
                 if self.frame > 10:
-                    [self.cap.grab() for _ in range(self.skip_frames)]
+                    [(self.cap.grab(), [self.cap.grab() for _ in range(self.interleave_fps)]) for _ in range(self.skip_frames)]
 
                 # Read frame
                 ret_val, img0 = self.cap.read()
+                [self.cap.grab() for _ in range(self.interleave_fps)]
+
                 img0s.append(img0)
                 if not ret_val:
                     self.count += 1
@@ -228,6 +231,7 @@ class LoadImages:  # for inference
                         path = self.files[self.count]
                         self.new_video(path)
                         ret_val, img0 = self.cap.read()
+                        [self.cap.grab() for _ in range(self.interleave_fps)]
                         break
             
             if self.frame > 10:
@@ -253,6 +257,14 @@ class LoadImages:  # for inference
         else:
             self.cap = cv2.VideoCapture(path)
         self.nframes = int(self.cap.get(cv2.CAP_PROP_FRAME_COUNT))
+        self.fps = round(self.cap.get(cv2.CAP_PROP_FPS))
+        if self.fps == 60:
+            print("Enabling interleave fps for 60-frame video")
+            self.nframes = self.nframes // 2
+            self.interleave_fps = 1
+            self.fps = 30
+        self.width = int(self.cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        self.height = int(self.cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
     def __len__(self):
         return self.nf  # number of files

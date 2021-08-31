@@ -14,6 +14,7 @@ class BasicBlock(nn.Module):
         self.relu = nn.ReLU(True)
         self.conv2 = nn.Conv2d(c_out,c_out,3,stride=1,padding=1, bias=False)
         self.bn2 = nn.BatchNorm2d(c_out)
+        self.downsample = nn.Identity()
         if is_downsample:
             self.downsample = nn.Sequential(
                 nn.Conv2d(c_in, c_out, 1, stride=2, bias=False),
@@ -122,19 +123,17 @@ class Net(nn.Module):
         x = self.layer4(x)
         x = self.avgpool(x)
         x = x.view(x.size(0),-1)
+        x = self.dequant(x)
         # B x 128
         if self.reid:
             x = x.div(x.norm(p=2,dim=1,keepdim=True))
             return x
         # classifier
         x = self.classifier(x)
-        x = self.dequant(x)
         return x
 
-    def fuse_modules(self):
-        conv = nn.ModuleList([layer for layer in self.conv.children()])
-        conv = torch.quantization.fuse_modules(conv, [['0', '1', '2']], inplace=True)  # 0, 1, 2 -> conv-bn-relu
-        self.conv = nn.Sequential(*conv)
+    def fuse_modules(self, train=False):
+        torch.quantization.fuse_modules(self.conv, [['0', '1', '2']], inplace=True)  # 0, 1, 2 -> conv-bn-relu
 
         layer1 = self._fuse_basicblock(self.layer1)
         layer2 = self._fuse_basicblock(self.layer2)
@@ -146,30 +145,21 @@ class Net(nn.Module):
         self.layer3 = nn.Sequential(*layer3)
         self.layer4 = nn.Sequential(*layer4)
 
-        classifier = nn.ModuleList([layer for layer in self.classifier.children()])
-        classifier = torch.quantization.fuse_modules(classifier, [['0', '1']], inplace=True)  # 0, 1 -> linear-bn
-        self.classifier = nn.Sequential(*classifier)
+        if not train:
+            torch.quantization.fuse_modules(self.classifier, [['0', '1']], inplace=True)  # 0, 1 -> linear-bn
 
     def _fuse_basicblock(self, layer):
         sublayers = nn.ModuleList([layer for layer in layer.children()])
         for basicblock in sublayers:
             if type(basicblock) != BasicBlock:
                 continue
-            basicblock = torch.quantization.fuse_modules(basicblock, [['conv1', 'bn1', 'relu'], ['conv2', 'bn2']], inplace=True)
+            torch.quantization.fuse_modules(basicblock, [['conv1', 'bn1', 'relu'], ['conv2', 'bn2']], inplace=True)
             if basicblock.is_downsample:
-                downsample = nn.ModuleList([layer for layer in basicblock.downsample.children()])
-                downsample = torch.quantization.fuse_modules(downsample, [['0', '1']], inplace=True)  # 0, 1 -> conv-bn
-                basicblock.downsample = nn.Sequential(*downsample)
+                torch.quantization.fuse_modules(basicblock.downsample, [['0', '1']], inplace=True)  # 0, 1 -> conv-bn
+
         return sublayers
 
-    '''
-        activation_dataset -> torch.Tensor([B, 3, 128, 64]) -> (B is mandatory)
-    '''
-    def quantize(self, activation_dataset):
-        self.eval()
-
-        self.qconfig = torch.quantization.get_default_qconfig('qnnpack')
-        
+    def quantize(self):
         self.quant = torch.quantization.QuantStub()
         self.dequant = torch.quantization.DeQuantStub()
         self.forward = self._quant_forward
@@ -183,11 +173,6 @@ class Net(nn.Module):
         self.layer2 = nn.Sequential(*layer2)
         self.layer3 = nn.Sequential(*layer3)
         self.layer4 = nn.Sequential(*layer4)
-
-        prepared_model = torch.quantization.prepare(self)
-        prepared_model(activation_dataset)  # activate model
-
-        return torch.quantization.convert(prepared_model)
 
     def _quant_basicblock(self, layer):
         sublayers = nn.ModuleList([layer for layer in layer.children()])

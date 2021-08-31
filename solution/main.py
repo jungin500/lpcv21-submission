@@ -11,9 +11,17 @@ import solution
 import track
 import time
 
-# print("WARNING: using qnnpack backend! torch might crash on PC!")
-# print("check main.py!")
-# torch.backends.quantized.engine = 'qnnpack'
+QENGINE_NAME = 'fbgemm'  # qnnpack, fbgemm
+
+if QENGINE_NAME == 'qnnpack':
+    print("WARNING: using qnnpack backend! torch might crash on PC! check main.py!")
+elif QENGINE_NAME == 'fbgemm':
+    print("Using FBGEMM backend")
+else:
+    print("Invalid backend name specified, check main.py.")
+    sys.exit(1)
+torch.backends.quantized.engine = QENGINE_NAME
+
 
 from yolox.utils.general import check_img_size, select_device
 
