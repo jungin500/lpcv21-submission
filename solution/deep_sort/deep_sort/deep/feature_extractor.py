@@ -18,14 +18,13 @@ class Extractor(object):
             self.net = torch.jit.load(model_path)
             self.net.eval()
             logger.info("Deep: using torchscript with Quantization and Fusing")
+            self.toggle_gpu = False
         else:
-            self.net = Net(reid=True)
+            model_path = 'solution/deep_sort/deep_sort/deep/checkpoint/deep_lighterweight_qat_int8_model.torchscript'
+            self.net = torch.jit.load(model_path)
             self.net.eval()
-            state_dict = torch.load(model_path, map_location=lambda storage, loc: storage)['net_dict']
-            self.net.load_state_dict(state_dict)
-            logger.info("Loading weights from {}... Done!".format(model_path))
-            logger.info("WARNING: Not using quantize/fused deep model!")
-            self.net.to(self.device)
+            logger.info("Deep: using torchscript with Quantization and Fusing")
+            self.toggle_gpu = True
 
         self.size = (64, 128)
         self.means = np.expand_dims(np.expand_dims(np.array([0.485, 0.456, 0.406]), 0), 0)
@@ -48,12 +47,9 @@ class Extractor(object):
             
             im_batch = torch.cat(im_batch, dim=0)
 
-            if self.device != 'cpu':
-                im_batch = im_batch.to(self.device)
+            if self.toggle_gpu:
+                im_batch = im_batch.to('cpu')
             features = self.net(im_batch)
-
-            if self.device.type != 'cpu':
-                features = features.cpu()
             return features.numpy()
 
 
