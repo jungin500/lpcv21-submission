@@ -58,6 +58,48 @@ class DeepSort(object):
             outputs = np.stack(outputs,axis=0)
         return outputs
 
+    def update_batched(self, batched_bbox_xywh, batched_confidences, batched_clses, batched_ori_img):
+        self.height, self.width = batched_ori_img[0].shape[:2]
+        
+        # generate detections
+        batched_features = self._get_features_batched(batched_bbox_xywh, batched_ori_img)
+        batched_outputs = []
+        for batch_id in range(len(batched_bbox_xywh)):
+            bbox_xywh = batched_bbox_xywh[batch_id]
+            confidences = batched_confidences[batch_id]
+            clses = batched_clses[batch_id]
+            features = batched_features[batch_id]
+            
+            bbox_tlwh = self._xywh_to_tlwh(bbox_xywh)
+            detections = [Detection(bbox_tlwh[i], conf, features[i], clses[i]) for i,conf in enumerate(confidences) if conf>self.min_confidence]
+
+            # run non_max_suppression by-class
+            detections = non_max_suppression(detections, self.nms_max_overlap)
+
+            # update tracker
+            self.tracker.predict()
+            self.tracker.update(detections)
+
+            # output bbox identities
+            outputs = []
+            now_time = datetime.datetime.now()
+            for now_line, track in enumerate(self.tracker.tracks):
+                if not track.is_confirmed() or track.time_since_update > 1:
+                    continue
+                box = track.to_tlwh()
+                x1,y1,x2,y2 = self._tlwh_to_xyxy(box)
+                track_id = track.track_id
+                cls2 = track.cls
+                score2 = int(track.score*100)
+                start_time = track.start_time
+                stay = int((now_time - start_time).total_seconds())
+                outputs.append(np.array([x1,y1,x2,y2,track_id, cls2, score2, stay], dtype=np.int))
+            if len(outputs) > 0:
+                outputs = np.stack(outputs,axis=0)
+
+            batched_outputs.append(outputs)
+        return batched_outputs
+
 
     """
     TODO:
@@ -117,4 +159,25 @@ class DeepSort(object):
             features = np.array([])
         return features
 
+    def _get_features_batched(self, batched_bbox_xywh, batched_ori_img):
+        batched_crops = []
+        for i, ori_img in enumerate(batched_ori_img):
+            for box in batched_bbox_xywh[i]:
+                x1,y1,x2,y2 = self._xywh_to_xyxy(box)
+                im = ori_img[y1:y2,x1:x2]
+                batched_crops.append(im)
+        
+        # Do inference
+        if batched_crops:
+            features = self.extractor(batched_crops)
+        else:
+            features = np.array([])
 
+        # Split features by image counts
+        image_counts_per_batch = [len(i) for i in batched_ori_img]
+        features_batched = []
+        for count in image_counts_per_batch:
+            current_idx = len(features_batched)
+            features_batched.append(features[current_idx:current_idx+count])
+
+        return features_batched
